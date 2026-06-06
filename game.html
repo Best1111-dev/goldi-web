@@ -133,9 +133,28 @@
         .btn-guilty { background: #ff3333; color: white; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; }
         .btn-innocent { background: #33cc33; color: white; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; }
         .btn-lawyer { background: #9400d3; color: white; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; }
+
+        /* GAME OVER SCREEN OVERLAY */
+        .game-over-box {
+            background: rgba(0,0,0,0.9);
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 9999;
+            text-align: center;
+        }
+        .game-over-title { font-size: 48px; color: gold; font-weight: bold; margin-bottom: 20px; }
+        .lobby-return-btn { background: #d4af37; color: black; border: none; padding: 15px 30px; font-size: 20px; font-weight: bold; cursor: pointer; border-radius: 5px; }
+        .lobby-return-btn:hover { background: #fff; }
     </style>
 </head>
 <body>
+
+<div id="gameOverScreen" class="game-over-box" style="display:none;">
+    <div class="game-over-title" id="victoryBanner">VICTORY ACHIEVED!</div>
+    <button class="lobby-return-btn" id="returnToLobbyBtn">Return to Lobby</button>
+</div>
 
 <div class="container">
     <div class="panel top-left">
@@ -145,7 +164,7 @@
 
     <div class="panel bottom-left">
         <div class="panel-header" id="bottomLeftHeader">Identity Context</div>
-        <div class="panel-body" id="bottomLeftBody" style="padding:0;">Loading channel access...</div>
+        <div class="panel-body" id="bottomLeftBody" style="padding:0; display:flex; flex-direction:column; height:100%;">Loading channel access...</div>
     </div>
 
     <div class="panel middle">
@@ -221,7 +240,6 @@ const ROLE_DATA = {
     "stalker": { p: 14, side: "villager", desc: "Watch 1 player at night to catch everyone who came to visit them." }
 };
 
-// Auto-run bootstrap routing sequence
 bootstrapGame();
 
 async function bootstrapGame() {
@@ -246,11 +264,18 @@ async function bootstrapGame() {
 }
 
 function syncGameEngine() {
-    // 1. Determine Host identity card & watch status
-    onValue(ref(db, "users"), snap => {
-        const users = snap.val() || {};
+    onValue(ref(db, "users"), async (snap) => {
+        let users = snap.val() || {};
         const sortedIds = Object.keys(users).sort();
         isHost = (sortedIds[0] === myId);
+
+        // --- SINGLE PLAYER NPC TESTING SEED INJECTOR ---
+        if (isHost && Object.keys(users).length === 1) {
+            await set(ref(db, "users/npc_alpha"), { name: "NPC Alpha", room: "game", alive: true, ready: true });
+            await set(ref(db, "users/npc_beta"), { name: "NPC Beta", room: "game", alive: true, ready: true });
+            return; 
+        }
+
         playersCache = users;
         myProfile = users[myId];
 
@@ -259,7 +284,6 @@ function syncGameEngine() {
             return;
         }
 
-        // Initialize matching side roles if host has not generated them yet
         if (isHost && !users[myId].role) {
             allotIdentityRoles(users);
         }
@@ -268,7 +292,6 @@ function syncGameEngine() {
         renderInteractionGrid();
     });
 
-    // 2. Track global game state changes
     onValue(ref(db, "gameState"), snap => {
         const state = snap.val();
         if (!state) {
@@ -280,81 +303,79 @@ function syncGameEngine() {
         renderCourtDisplay(state.court);
         toggleChatInputState();
         renderInteractionGrid();
+
+        // Detect if game over win parameters have triggered
+        if (state.phase === "game_over" && state.winnerMessage) {
+            displayGameOverOverlay(state.winnerMessage);
+        }
     });
 
-    // 3. Setup message listeners
     setupChatChannels();
+    setupLobbyReturnRoute();
 }
 
 function setupDefaultGameState() {
     set(ref(db, "gameState"), {
         phase: "day_voting",
         timer: 100,
-        court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} }
+        court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} },
+        winnerMessage: ""
     });
     sendSystemLog("The simulation begins. It is Day! Discuss freely and cast your votes to execute suspected threats.");
 }
 
-/* FACTION ALLOCATION LOGIC */
+/* ADVANCED RULE-SET FACTION CARDS SEED ALLOTMENT ENGINE */
 function allotIdentityRoles(users) {
     const entries = Object.entries(users);
-    const count = entries.length;
-    let pool = Object.keys(ROLE_DATA).filter(r => r !== "vampire lawyer"); // lawyer assigned specially if needed
+    const playerCount = entries.length;
+
+    // Rule Metric: 1 Vampire for every 4 Villagers (e.g., 1-4 players = 1 vamp, 5-8 players = 2 vamps)
+    let vampireQuota = Math.max(1, Math.floor((playerCount - 1) / 4) + 1);
     
-    // Add lawyer back to the pool explicitly for game sizes with multiple vampires
-    pool.push("vampire lawyer");
-
-    // Shuffle role cards
-    pool.sort(() => Math.random() - 0.5);
-
-    let vCount = Math.max(1, Math.floor(count * 0.25));
-    let tCount = 1; // 1 Neutral Troll card
     let updates = {};
+    let shuffledPlayerEntries = [...entries].sort(() => Math.random() - 0.5);
 
-    let assignedVamps = 0;
-    let assignedTrolls = 0;
+    // 1. Mandatory Core Card Assignations
+    let vProgenitorEntry = shuffledPlayerEntries.pop();
+    updates[`users/${vProgenitorEntry[0]}/role`] = "vampire progenitor";
+    updates[`users/${vProgenitorEntry[0]}/alive`] = true;
+    vampireQuota--;
 
-    entries.forEach(([id, u]) => {
-        let selectedRole = "villager";
-        
-        for (let i = 0; i < pool.length; i++) {
-            let r = pool[i];
-            let side = ROLE_DATA[r].side;
-            if (side === "vampire" && assignedVamps < vCount) {
-                selectedRole = r;
-                pool.splice(i, 1);
-                assignedVamps++;
-                break;
-            } else if (side === "neutral" && assignedTrolls < tCount) {
-                selectedRole = r;
-                pool.splice(i, 1);
-                assignedTrolls++;
-                break;
-            } else if (side === "villager" && (selectedRole === "villager" || !selectedRole)) {
-                selectedRole = r;
-                pool.splice(i, 1);
-                break;
-            }
+    let detectiveEntry = shuffledPlayerEntries.pop();
+    updates[`users/${detectiveEntry[0]}/role`] = "detective";
+    updates[`users/${detectiveEntry[0]}/alive`] = true;
+
+    // 2. Build out specific side pools
+    let remainingVampireRoles = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side === "vampire" && r !== "vampire progenitor");
+    let villagerAndNeutralRoles = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side !== "vampire" && r !== "detective");
+
+    remainingVampireRoles.sort(() => Math.random() - 0.5);
+    villagerAndNeutralRoles.sort(() => Math.random() - 0.5);
+
+    // 3. Complete distribution matching remaining roster slots
+    shuffledPlayerEntries.forEach(([id, u]) => {
+        let assignedRole = "";
+        if (vampireQuota > 0 && remainingVampireRoles.length > 0) {
+            assignedRole = remainingVampireRoles.pop();
+            vampireQuota--;
+        } else {
+            assignedRole = villagerAndNeutralRoles.pop() || "villager";
         }
-        
-        // Final fallback safeguard
-        if (!selectedRole) selectedRole = "hunter";
-        
-        // Force at least 1 Vampire Progenitor if vampires exist
-        if (selectedRole === "vampire lawyer" && assignedVamps === 1) {
-            selectedRole = "vampire progenitor";
-        }
-
-        updates[`users/${id}/role`] = selectedRole;
+        updates[`users/${id}/role`] = assignedRole;
         updates[`users/${id}/alive`] = true;
     });
 
     update(ref(db), updates);
 }
 
-/* TIMER BANNER MANAGEMENT & SYSTEM LOOP */
+/* TIMER MANAGEMENT & SYSTEM LOOP Ticks */
 function updateTimerView(seconds, phase) {
     const banner = document.getElementById("timerBanner");
+    if (phase === "game_over") {
+        banner.textContent = "SIMULATION CONCLUDED";
+        banner.className = "timer-banner";
+        return;
+    }
     let displayPhase = phase.toUpperCase().replace("_", " ");
     banner.textContent = `${displayPhase} PHASE — TIME REMAINING: ${seconds}s`;
     if (phase.startsWith("day")) {
@@ -368,9 +389,8 @@ function updateTimerView(seconds, phase) {
     }
 }
 
-// Host ticks down game execution cycle loops
 setInterval(() => {
-    if (!isHost || !currentPhase) return;
+    if (!isHost || !currentPhase || currentPhase === "game_over") return;
     runTransaction(ref(db, "gameState/timer"), (currentTimer) => {
         if (currentTimer === null) return 0;
         return currentTimer - 1;
@@ -387,29 +407,34 @@ function handlePhaseTimeout() {
     }
 }
 
-/* BOTTOM LEFT PANEL MANAGEMENT */
+/* IDENTITY VIEW (BOTTOM LEFT PANEL) */
 function renderIdentityPanel() {
     const hdr = document.getElementById("bottomLeftHeader");
     const body = document.getElementById("bottomLeftBody");
     if (!myProfile || !myProfile.role) return;
 
     const isDead = myProfile.alive === false;
-    hdr.textContent = `YOUR ROLE: ${myProfile.role.toUpperCase()} ${isDead ? '(ELIMINATED)' : ''}`;
-
     const roleInfo = ROLE_DATA[myProfile.role];
     if (!roleInfo) return;
 
+    hdr.textContent = `IDENTITY MONITOR ${isDead ? '(ELIMINATED)' : ''}`;
+
+    // Condition: Villagers and Neutrals read text instructions inside panel space immediately
     if (roleInfo.side === "villager" || roleInfo.side === "neutral") {
         body.innerHTML = `
-            <div style="padding:15px; font-size:14px; line-height:1.5; color:#a0e6ff;">
-                <b>Faction:</b> ${roleInfo.side.toUpperCase()}<br><br>
-                <b>Ability Manual:</b> ${roleInfo.desc}
+            <div style="padding:15px; font-size:14px; line-height:1.5; color:#a0e6ff; background:#141414; flex:1;">
+                <b>Your Secret Card:</b> ${myProfile.role.toUpperCase()}<br>
+                <b>Faction Alignment:</b> ${roleInfo.side.toUpperCase()}<br><br>
+                <b>Manual Capability:</b> ${roleInfo.desc}
             </div>
         `;
     } else {
-        // Render synchronized vampire text communication portal node
+        // Condition: Vampires receive designated structural alert chat channel message arrays naming them
         body.innerHTML = `
-            <div class="chat-wrap" style="height:180px;">
+            <div style="padding:10px; font-size:12px; color:#ffb3b3; background:#241212; border-bottom:1px solid #451a1a;">
+                ATTENTION <b>${myProfile.name.toUpperCase()}</b>: You are the <b>${myProfile.role.toUpperCase()}</b>. Coordinate your metrics stealthily.
+            </div>
+            <div class="chat-wrap" style="flex:1;">
                 <div class="chat-messages" id="vampChatMsgs" style="background:#1a0c0c;"></div>
                 <div class="chat-input-row">
                     <input id="vampChatInp" placeholder="Vampire frequencies..." autocomplete="off">
@@ -421,7 +446,7 @@ function renderIdentityPanel() {
     }
 }
 
-/* CHAT PLATFORM NETWORKS */
+/* SYSTEM CHAT CHANNEL NETWORKS */
 function setupChatChannels() {
     const mainBox = document.getElementById("mainChatMsgs");
     onChildAdded(ref(db, "mainChat"), snap => {
@@ -448,7 +473,6 @@ function setupChatChannels() {
     document.getElementById("mainChatSend").onclick = sendMainChatMessage;
     document.getElementById("mainChatInp").addEventListener("keydown", e => { if (e.key === "Enter") sendMainChatMessage(); });
 
-    // Sync Will data out continuously
     const willBox = document.getElementById("willTextarea");
     willBox.oninput = () => {
         if (myId && myProfile && myProfile.alive !== false) {
@@ -456,11 +480,8 @@ function setupChatChannels() {
         }
     };
     
-    // Auto pull will if eliminated
     onValue(ref(db, `users/${myId}/alive`), snap => {
-        if (snap.val() === false) {
-            willBox.disabled = true;
-        }
+        if (snap.val() === false) { willBox.disabled = true; }
     });
 }
 
@@ -529,7 +550,7 @@ function sendSystemLog(txt) {
     push(ref(db, "mainChat"), { sender: "System", text: txt, type: "sys" });
 }
 
-/* TOP LEFT INTERACTION ENGINE (VOTES & ABILITIES) */
+/* ACTION HANDLING SYSTEMS */
 function renderInteractionGrid() {
     const hdr = document.getElementById("topLeftHeader");
     const body = document.getElementById("topLeftBody");
@@ -550,7 +571,6 @@ function renderInteractionGrid() {
             div.className = "target-item";
             div.innerHTML = `<span>${p.name}</span> <button class="target-btn" id="vote-${id}">Vote</button>`;
             body.appendChild(div);
-
             div.querySelector(".target-btn").onclick = () => castLobbyVote(id);
         });
     } else if (currentPhase === "day_court") {
@@ -560,7 +580,6 @@ function renderInteractionGrid() {
         hdr.textContent = `Night Activities — ${myProfile.role.toUpperCase()}`;
         body.innerHTML = "";
         
-        // Randomly assign a potion for the witch before rendering UI selection lists
         if (myProfile.role === "witch" && !witchPotionThisNight) {
             const pots = ["Useless Potion", "Poison Potion", "Invisibility Potion"];
             witchPotionThisNight = pots[Math.floor(Math.random() * pots.length)];
@@ -579,7 +598,6 @@ function renderInteractionGrid() {
             div.className = "target-item";
             div.innerHTML = `<span>${p.name}</span> <button class="target-btn" id="act-${id}">Target</button>`;
             body.appendChild(div);
-
             div.querySelector(".target-btn").onclick = () => submitNightAction(id);
         });
     }
@@ -592,10 +610,9 @@ function castLobbyVote(targetId) {
 
 function submitNightAction(targetId) {
     if (myProfile.role === "investigator" || myProfile.role === "psychic") {
-        // Double selection targeting mechanism checks
         if (!window.firstTarget) {
             window.firstTarget = targetId;
-            alert(`First target pinned: ${playersCache[targetId].name}. Select one more target to link action.`);
+            alert(`First target pinned: ${playersCache[targetId].name}. Select one more target.`);
             return;
         } else {
             const targetString = `${window.firstTarget},${targetId}`;
@@ -605,22 +622,21 @@ function submitNightAction(targetId) {
     } else {
         set(ref(db, `actions/${myId}`), targetId);
     }
-    alert("Action targeted to database sequence loop!");
+    alert("Action targeted successfully!");
 }
 
-/* TRIBUNAL COURT SYSTEM RENDERERS */
+/* COURT ENGINE FUNCTIONS */
 function renderCourtDisplay(court) {
     const area = document.getElementById("courtArea");
     if (!court || !court.active) { area.innerHTML = ""; return; }
 
     area.innerHTML = `
         <div class="court-box">
-            <h3>TRIBUNAL CASING: Is ${court.targetName} Innocent or Guilty?</h3>
-            <div>Guilty Metrics: ${court.guilty} | Innocent Metrics: ${court.innocent}</div>
+            <h3>TRIBUNAL TRIAL: Is ${court.targetName} Innocent or Guilty?</h3>
             <div class="court-btns">
                 <button class="btn-guilty" id="gBtn">GUILTY</button>
                 <button class="btn-innocent" id="iBtn">INNOCENT</button>
-                ${myProfile?.role === "vampire lawyer" ? '<button class="btn-lawyer" id="lBtn">LAWYER INTERVENTION</button>' : ''}
+                ${myProfile?.role === "vampire lawyer" ? '<button class="btn-lawyer" id="lBtn">LAWYER OVERRIDE</button>' : ''}
             </div>
         </div>
     `;
@@ -629,9 +645,7 @@ function renderCourtDisplay(court) {
     document.getElementById("iBtn").onclick = () => submitVerdict("innocent");
     
     const lBtn = document.getElementById("lBtn");
-    if (lBtn) {
-        lBtn.onclick = executeLawyerLoop;
-    }
+    if (lBtn) lBtn.onclick = executeLawyerLoop;
 }
 
 function submitVerdict(type) {
@@ -641,7 +655,6 @@ function submitVerdict(type) {
 }
 
 function executeLawyerLoop() {
-    // Lawyer automatically stops court actions and triggers immediate dusk sequence transitions
     sendSystemLog("CRITICAL: The Vampire Lawyer overrides the trial! Court dismissed. Nightfall approaches instantly.");
     update(ref(db, "gameState"), {
         phase: "night",
@@ -651,7 +664,7 @@ function executeLawyerLoop() {
     set(ref(db, "votes"), null);
 }
 
-/* DAY CYCLE RESOLUTION TALLEY ENGINES */
+/* DAY PHASE COMPUTATIONS */
 function evaluateVotingTally() {
     onValue(ref(db, "votes"), snap => {
         const votes = snap.val() || {};
@@ -659,9 +672,7 @@ function evaluateVotingTally() {
         let activePlayersCount = Object.values(playersCache).filter(p => p.alive).length;
         let threshold = Math.ceil(activePlayersCount * 0.5);
 
-        Object.values(votes).forEach(tId => {
-            tallies[tId] = (tallies[tId] || 0) + 1;
-        });
+        Object.values(votes).forEach(tId => { tallies[tId] = (tallies[tId] || 0) + 1; });
 
         let courtTargetId = null;
         Object.entries(tallies).forEach(([tId, count]) => {
@@ -669,7 +680,7 @@ function evaluateVotingTally() {
         });
 
         if (courtTargetId) {
-            sendSystemLog(`The village has reached consensus! ${playersCache[courtTargetId].name} is sent to stand trial in court. 100 seconds to deliberate.`);
+            sendSystemLog(`The village reached a consensus! ${playersCache[courtTargetId].name} is sent to stand trial in court.`);
             update(ref(db, "gameState"), {
                 phase: "day_court",
                 timer: 100,
@@ -683,7 +694,7 @@ function evaluateVotingTally() {
                 }
             });
         } else {
-            sendSystemLog("The town failed to reach a consensus. Night descends upon the village...");
+            sendSystemLog("The town failed to reach consensus. Night descends...");
             update(ref(db, "gameState"), { phase: "night", timer: 40, court: { active: false } });
         }
     }, { onlyOnce: true });
@@ -706,40 +717,38 @@ function resolveCourtVerdict() {
             sendSystemLog(`By a verdict of ${gCount} to ${iCount}, ${court.targetName} has been executed.`);
             executePlayerDeath(court.targetId);
         } else {
-            sendSystemLog(`By a verdict of ${iCount} to ${gCount}, ${court.targetName} has been found Innocent. They return to the crowd.`);
+            sendSystemLog(`By a verdict of ${iCount} to ${gCount}, ${court.targetName} has been found Innocent.`);
         }
 
-        // Advance layout straight into standard night arrays
-        update(ref(db, "gameState"), {
-            phase: "night",
-            timer: 40,
-            court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} }
-        });
+        if (currentPhase !== "game_over") {
+            update(ref(db, "gameState"), {
+                phase: "night",
+                timer: 40,
+                court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} }
+            });
+        }
     }, { onlyOnce: true });
 }
 
 function executePlayerDeath(id) {
     update(ref(db, `users/${id}`), { alive: false });
     
-    // Publish player's will to the text channel if they wrote one
     onValue(ref(db, `wills/${id}`), snap => {
         const data = snap.val();
         if (data && data.text) {
             sendSystemLog(`[LAST WILL OF ${data.name.toUpperCase()}]: "${data.text}"`);
         } else {
-            sendSystemLog(`${playersCache[id].name} left no testament to read.`);
+            sendSystemLog(`${playersCache[id].name} left no testament.`);
         }
     }, { onlyOnce: true });
 
     verifyWinStateConditions();
 }
 
-/* MASTER NIGHT ACTION COMPUTATION ENGINE (RUNS EXCLUSIVELY ON HOST CLIENT) */
+/* NIGHT PROCESSING LOOP */
 function processNightActions() {
     onValue(ref(db, "actions"), snap => {
         const acts = snap.val() || {};
-        
-        // 1. Initialize action parameters mapping trackers
         let interactionTargets = {}; 
         let frozenPlayers = new Set();
         let invisiblePlayers = new Set();
@@ -747,13 +756,12 @@ function processNightActions() {
         let notificationsQueue = [];
         let eliminationQueue = new Set();
 
-        // Build base actions target mapping
         Object.entries(acts).forEach(([actorId, dataStr]) => {
             if (!playersCache[actorId]?.alive) return;
             interactionTargets[actorId] = dataStr;
         });
 
-        // --- PRIORITY 1: CONFUSION VAMPIRE ---
+        // P1: Confusion Vampire
         Object.entries(playersCache).forEach(([id, p]) => {
             if (p.role === "confusion vampire" && interactionTargets[id]) {
                 let target = interactionTargets[id];
@@ -765,133 +773,114 @@ function processNightActions() {
             }
         });
 
-        // --- PRIORITY 2: ICE CREAM MAKER ---
+        // P2: Ice Cream Maker
         Object.entries(playersCache).forEach(([id, p]) => {
             if (p.role === "ice cream maker" && interactionTargets[id]) {
                 let target = interactionTargets[id];
                 frozenPlayers.add(target);
-                delete interactionTargets[target]; // Strip target's action capability
+                delete interactionTargets[target];
             }
         });
 
-        // --- PRIORITY 3: WITCH INVISIBILITY POTION ---
+        // P3: Witch Invisibility
         Object.entries(playersCache).forEach(([id, p]) => {
             if (p.role === "witch" && interactionTargets[id] && witchPotionThisNight === "Invisibility Potion") {
                 invisiblePlayers.add(interactionTargets[id]);
             }
         });
 
-        // Remove actions targeted at invisible players (except actions by the witch themselves)
         Object.entries(interactionTargets).forEach(([actorId, targetStr]) => {
             if (playersCache[actorId].role !== "witch" && invisiblePlayers.has(targetStr)) {
                 delete interactionTargets[actorId];
             }
         });
 
-        // --- PRIORITY 4: HOLY KNIGHT ---
+        // P4: Holy Knight
         Object.entries(playersCache).forEach(([id, p]) => {
             if (p.role === "holy knight" && interactionTargets[id]) {
                 protectiveWards[interactionTargets[id]] = id;
             }
         });
 
-        // --- RE-EVALUATING ACTION VECTORS & RESOLVING KILLS/INFO ---
+        // Resolve Remainder Actions
         Object.entries(interactionTargets).forEach(([actorId, targetStr]) => {
             let role = playersCache[actorId].role;
-            
-            // Handle dual-target processing parameters safely
             let t1 = targetStr.split(",")[0];
             let t2 = targetStr.split(",")[1];
 
             switch(role) {
                 case "vampire progenitor":
                     if (protectiveWards[t1]) {
-                        let knightId = protectiveWards[t1];
-                        eliminationQueue.add(actorId); // Both Progenitor and Knight die
-                        eliminationQueue.add(knightId);
+                        eliminationQueue.add(actorId);
+                        eliminationQueue.add(protectiveWards[t1]);
                     } else {
                         eliminationQueue.add(t1);
                     }
                     break;
-
                 case "hunter":
                     if (playersCache[t1]) {
                         eliminationQueue.add(t1);
-                        if (ROLE_DATA[playersCache[t1].role].side === "villager") {
-                            eliminationQueue.add(actorId); // Hunter commits suicide if they shot a villager
-                        }
+                        if (ROLE_DATA[playersCache[t1].role].side === "villager") eliminationQueue.add(actorId);
                     }
                     break;
-
                 case "troll":
                     if (interactionTargets[t1]) {
-                        eliminationQueue.add(t1); // Target visited someone and gets executed by the Troll
-                    } else {
-                        notificationsQueue.push({ to: t1, text: `SYSTEM NOTE: You stayed home and discovered that ${playersCache[actorId].name} is the Troll!` });
-                    }
-                    break;
-
-                case "witch":
-                    if (witchPotionThisNight === "Poison Potion") {
                         eliminationQueue.add(t1);
+                    } else {
+                        notificationsQueue.push({ to: t1, text: `SYSTEM NOTE: You stayed home. ${playersCache[actorId].name} is the Troll!` });
                     }
                     break;
-
+                case "witch":
+                    if (witchPotionThisNight === "Poison Potion") eliminationQueue.add(t1);
+                    break;
                 case "detective":
                     let isVamp = ROLE_DATA[playersCache[t1]?.role]?.side === "vampire";
                     notificationsQueue.push({ to: actorId, text: `DETECTIVE INTEL: ${playersCache[t1].name} aligns with the ${isVamp ? "Vampires" : "Villagers"}.` });
                     break;
-
                 case "seer vampire":
-                    notificationsQueue.push({ to: actorId, text: `SEER INTEL: ${playersCache[t1].name}'s exact hidden identity card is: ${playersCache[t1].role.toUpperCase()}.` });
+                    notificationsQueue.push({ to: actorId, text: `SEER INTEL: ${playersCache[t1].name}'s exact role card is: ${playersCache[t1].role.toUpperCase()}.` });
                     break;
-
                 case "investigator":
                     let side1 = ROLE_DATA[playersCache[t1]?.role]?.side;
                     let side2 = ROLE_DATA[playersCache[t2]?.role]?.side;
-                    let match = (side1 === side2);
-                    notificationsQueue.push({ to: actorId, text: `INVESTIGATOR REPORT: ${playersCache[t1].name} and ${playersCache[t2].name} are ${match ? "on the SAME side" : "on DIFFERENT sides"}.` });
+                    notificationsQueue.push({ to: actorId, text: `INVESTIGATOR REPORT: ${playersCache[t1].name} and ${playersCache[t2].name} are ${side1 === side2 ? "on the SAME side" : "on DIFFERENT sides"}.` });
                     break;
-
                 case "psychic":
-                    notificationsQueue.push({ to: t1, text: `PSYCHIC LINK: You are linked to ${playersCache[t2].name}. Their card role is ${playersCache[t2].role.toUpperCase()}.` });
-                    notificationsQueue.push({ to: t2, text: `PSYCHIC LINK: You are linked to ${playersCache[t1].name}. Their card role is ${playersCache[t1].role.toUpperCase()}.` });
+                    notificationsQueue.push({ to: t1, text: `PSYCHIC LINK: Linked to ${playersCache[t2].name}. Card role: ${playersCache[t2].role.toUpperCase()}.` });
+                    notificationsQueue.push({ to: t2, text: `PSYCHIC LINK: Linked to ${playersCache[t1].name}. Card role: ${playersCache[t1].role.toUpperCase()}.` });
                     break;
-
                 case "spy":
                     let dest = interactionTargets[t1] ? playersCache[interactionTargets[t1]].name : "Nobody";
-                    notificationsQueue.push({ to: actorId, text: `SPY NETWORK INTEL: ${playersCache[t1].name} went out to visit: ${dest}.` });
+                    notificationsQueue.push({ to: actorId, text: `SPY NETWORK INTEL: ${playersCache[t1].name} visited: ${dest}.` });
                     break;
-
                 case "stalker":
                     let visitors = [];
                     Object.entries(interactionTargets).forEach(([vId, vTarg]) => {
                         if (vTarg === t1 && vId !== actorId) visitors.push(playersCache[vId].name);
                     });
-                    notificationsQueue.push({ to: actorId, text: `STALKER INTEL: ${playersCache[t1].name} was visited tonight by: ${visitors.length ? visitors.join(", ") : "Nobody"}.` });
+                    notificationsQueue.push({ to: actorId, text: `STALKER INTEL: ${playersCache[t1].name} was visited by: ${visitors.join(", ") || "Nobody"}.` });
                     break;
             }
         });
 
-        // Dispatch calculated notifications into the system chat network
         notificationsQueue.forEach(n => {
-            push(ref(db, "mainChat"), { text: `[PRIVATE] ${n.text}`, type: "priv", sender: "System" });
+            if (myId === n.to) {
+                push(ref(db, "mainChat"), { text: `[PRIVATE] ${n.text}`, type: "priv", sender: "System" });
+            }
         });
 
-        // 4. Finalize deaths
-        eliminationQueue.forEach(deadId => {
-            executePlayerDeath(deadId);
-        });
+        eliminationQueue.forEach(deadId => { executePlayerDeath(deadId); });
 
         if (eliminationQueue.size === 0) {
             sendSystemLog("Dawn arrives. Surprisingly, no one was eliminated tonight!");
         }
 
-        // Reset tracking configurations before resetting the environment phase
         witchPotionThisNight = "";
         set(ref(db, "actions"), null);
-        update(ref(db, "gameState"), { phase: "day_voting", timer: 100, court: { active: false } });
-
+        
+        if (currentPhase !== "game_over") {
+            update(ref(db, "gameState"), { phase: "day_voting", timer: 100, court: { active: false } });
+        }
     }, { onlyOnce: true });
 }
 
@@ -903,19 +892,47 @@ function verifyWinStateConditions() {
     let trolls = alivePlayers.filter(p => p.role === "troll");
     let progAlive = alivePlayers.some(p => p.role === "vampire progenitor");
 
+    let msg = "";
     if (vamps.length === 0 && trolls.length === 0) {
-        sendSystemLog("VICTORY! All threats eliminated. The Villagers win the game!");
-        set(ref(db, "gameState/phase"), "game_over");
+        msg = "THE VILLAGERS WIN! All threats have been purged from the region.";
     } else if (vills.length === 0 && trolls.length === 0) {
-        sendSystemLog("VICTORY! The village is overtaken. The Vampires win the game!");
-        set(ref(db, "gameState/phase"), "game_over");
+        msg = "THE VAMPIRES WIN! The village has been completely overtaken.";
     } else if (!progAlive && vills.length === 0 && trolls.length > 0) {
-        sendSystemLog("SABOTAGE VICTORY! The Troll has successfully eliminated the Progenitor and all Villagers. The Troll wins!");
-        set(ref(db, "gameState/phase"), "game_over");
+        msg = "THE TROLL WINS! The Progenitor is destroyed and the village is in ruins.";
+    }
+
+    if (msg) {
+        update(ref(db, "gameState"), { phase: "game_over", winnerMessage: msg });
+        sendSystemLog(`GAME OVER: ${msg}`);
     }
 }
 
-/* BOTTOM RIGHT COMPENDIUM DATABASE (WIKI WIDGET) */
+/* RE-ROUTING OVERLAY PANEL MECHANISMS */
+function displayGameOverOverlay(msg) {
+    document.getElementById("victoryBanner").textContent = msg;
+    document.getElementById("gameOverScreen").style.display = "flex";
+}
+
+function setupLobbyReturnRoute() {
+    document.getElementById("returnToLobbyBtn").onclick = async () => {
+        if (isHost) {
+            // Flush real-time channels back to structural base levels safely
+            await set(ref(db, "gameState"), null);
+            await set(ref(db, "mainChat"), null);
+            await set(ref(db, "vampChat"), null);
+            await set(ref(db, "actions"), null);
+            await set(ref(db, "votes"), null);
+            await set(ref(db, "wills"), null);
+            
+            // Re-point all players back to lobby space
+            Object.keys(playersCache).forEach(id => {
+                update(ref(db, `users/${id}`), { room: "lobby", ready: false, role: null, alive: null });
+            });
+        }
+        window.location.href = "index.html";
+    };
+}
+
 function setupWiki() {
     const out = document.getElementById("wikiOut");
     const inp = document.getElementById("wikiInp");
@@ -926,22 +943,19 @@ function setupWiki() {
         if(!q) return;
 
         if (q === "guide") {
-            out.textContent = "=== GAME MANUAL & GUIDE ===\n\n1. Day Phase: Talk with others, formulate leads, and vote for a suspect. Getting 50%+ votes sends them to Court.\n2. Court Phase: Vote Guilty or Innocent. If Guilty wins out, the player is executed and their will is read.\n3. Night Phase: Global chat is locked down. Select a target in your top-left panel to perform your secret role actions. Actions process sequentially based on role priority levels.";
+            out.textContent = "=== GAME MANUAL & GUIDE ===\n\n1. Day Phase: Talk, build threads, vote suspect. 50%+ votes trigger Court.\n2. Court Phase: Vote Guilty/Innocent. Highest count wins verdict.\n3. Night Phase: Text channels lock. Select a target to execute actions based on priority metrics levels.";
         } else if (q === "priority list") {
             let sorted = Object.entries(ROLE_DATA).sort((a,b) => a[1].p - b[1].p);
             let txt = "=== ABILITY EXECUTION ORDER ===\n\n";
-            sorted.forEach(([name, data]) => {
-                txt += `Priority [${data.p}]: ${name.toUpperCase()} (${data.side})\n`;
-            });
+            sorted.forEach(([name, data]) => { txt += `Priority [${data.p}]: ${name.toUpperCase()} (${data.side})\n`; });
             out.textContent = txt;
         } else if (ROLE_DATA[q]) {
             out.textContent = `=== ROLE ENTRY: ${q.toUpperCase()} ===\n\nFACTION: ${ROLE_DATA[q].side.toUpperCase()}\nPRIORITY SLOT: ${ROLE_DATA[q].p}\n\nDESCRIPTION:\n${ROLE_DATA[q].desc}`;
         } else {
-            out.textContent = "ERROR: Command unrecognized. You can only look up 'guide', 'priority list', or an exact role name card.";
+            out.textContent = "ERROR: Command unrecognized. Queries are limited to 'guide', 'priority list', or a valid Role Name card configuration.";
         }
         inp.value = "";
     };
-
     btn.onclick = processQuery;
     inp.addEventListener("keydown", e => { if (e.key === "Enter") processQuery(); });
 }
