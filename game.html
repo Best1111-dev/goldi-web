@@ -254,27 +254,23 @@ async function bootstrapGame() {
         if (!res.ok) throw new Error("Auth state dropped");
         const discordUser = await res.json();
         
-        // 1. Lock down your ID first!
-        myId = discordUser.id;
+        // 1. Grab the propagated information instantly from local memory!
+        myId = localStorage.getItem("myId");
+        const myStoredName = localStorage.getItem("myName");
         
-        // 2. Initialize the wiki setup
-        setupWiki();
-        
-        // 3. Now that myId is safely set, it is safe to sync the database!
-        syncGameEngine();
-    } catch(e) {
-        localStorage.removeItem("token");
-        window.location.href = "index.html";
-    }
-}
+        // Safety fallback: if they somehow opened game.html directly without logging in
+        if (!myId || !myStoredName) {
+            window.location.href = "index.html";
+        } else {
+            // Start the game loop immediately! No waiting for Discord APIs.
+            setupWiki();
+            syncGameEngine();
+        }
 
 function syncGameEngine() {
     onValue(ref(db, "users"), async (snap) => {
         let users = snap.val() || {};
         
-        // SAFEGUARD: If Discord hasn't responded yet, skip this frame entirely
-        if (!myId) return; 
-
         const sortedIds = Object.keys(users).sort();
         isHost = (sortedIds[0] === myId);
 
@@ -283,8 +279,10 @@ function syncGameEngine() {
             const npcUpdates = {};
             npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true };
             npcUpdates["users/npc_beta"] = { name: "NPC Beta", room: "game", alive: true, ready: true };
-            npcUpdates[`users/${myId}/room`] = "game";
-            npcUpdates[`users/${myId}/alive`] = true;
+            
+            // Forcefully lock your local identity cache into the write batch
+            npcUpdates[`users/${myId}`] = { name: myStoredName, room: "game", alive: true, ready: true };
+            
             await update(ref(db), npcUpdates);
             return; 
         }
@@ -292,7 +290,7 @@ function syncGameEngine() {
         playersCache = users;
         myProfile = users[myId];
 
-        // Security check now runs safely because myId and myProfile are guaranteed
+        // Security check passes perfectly because data exists locally
         if (!myProfile || myProfile.room !== "game") {
             window.location.href = "index.html";
             return;
