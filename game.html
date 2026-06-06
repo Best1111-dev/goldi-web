@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Goldi Web - The Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
         body {
             margin: 0;
@@ -9,13 +10,17 @@
             background: #0f0f0f;
             color: white;
             user-select: none;
+            overflow: hidden;
         }
 
+        /* RESPONSIVE LAYOUT DECK CONTAINER */
         .container {
             display: grid;
             grid-template-columns: 1fr 2fr 1fr;
             grid-template-rows: 1fr 1fr;
             height: 100vh;
+            width: 100vw;
+            transition: transform 0.3s ease-out;
         }
 
         .panel {
@@ -24,9 +29,10 @@
             display: flex;
             flex-direction: column;
             background: #141414;
+            box-sizing: border-box;
         }
 
-        /* 5-PANEL ARCHITECTURE */
+        /* 5-PANEL GRID ARCHITECTURE (DESKTOP) */
         .top-left { grid-column: 1; grid-row: 1; }
         .bottom-left { grid-column: 1; grid-row: 2; }
         .middle { grid-column: 2; grid-row: 1 / span 2; }
@@ -98,7 +104,7 @@
         .chat-wrap { display: flex; flex-direction: column; height: 100%; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 15px; background: #0b0b0b; }
         .chat-input-row { display: flex; border-top: 1px solid #252525; background: #141414; }
-        .chat-input-row input { flex: 1; padding: 14px; border: none; background: #181818; color: white; outline: none; font-size: 15px; }
+        .chat-input-row input { flex: 1; padding: 14px; border: none; background: #181818; color: white; outline: none; font-size: 15px; width: 50px; }
         .chat-input-row button { padding: 14px 24px; background: #c99700; color: black; font-weight: bold; border: none; cursor: pointer; font-size: 14px; }
         .chat-input-row button:hover { background: #fff; }
 
@@ -206,7 +212,7 @@
             margin-top: 10px;
         }
         .manifest-section { margin-bottom: 20px; }
-        .manifest-section h4 { margin: 0 0 10px 0; font-size: 18px; border-bottom: 1px solid #44; padding-bottom: 4px; }
+        .manifest-section h4 { margin: 0 0 10px 0; font-size: 18px; border-bottom: 1px solid #444; padding-bottom: 4px; }
         .manifest-section.vills h4 { color: #5dade2; }
         .manifest-section.vamps h4 { color: #ec7063; }
         .manifest-section.neuts h4 { color: #f4d03f; }
@@ -218,9 +224,55 @@
             gap: 5px;
             font-weight: bold;
         }
+
+        /* MOBILE HUD NAV INDICATOR PILLS */
+        .mobile-nav-hud {
+            display: none;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            justify-content: space-around;
+            padding: 10px 0;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+        .hud-pill { color: #666; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
+        .hud-pill.active { color: #d4af37; background: #2a220a; }
+
+        /* MOBILE VIEWPORTS OVERRIDE CONFIGURATION */
+        @media (max-width: 768px) {
+            body { overflow: hidden; position: fixed; width: 100vw; height: 100vh; }
+            .mobile-nav-hud { display: flex; position: fixed; top: 0; left: 0; width: 100vw; z-index: 5000; height: 38px; box-sizing: border-box; }
+            
+            .container {
+                display: flex;
+                width: 300vw; /* 3 Full Horizontal swipe tracks */
+                height: calc(100vh - 38px);
+                margin-top: 38px;
+                transform: translateX(-100vw); /* Default center on the Middle Deck */
+            }
+
+            /* Stack sections vertically within tracks to preserve full UI features */
+            .left-track, .middle-track, .right-track {
+                width: 100vw;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                flex-shrink: 0;
+            }
+
+            .panel { flex: 1; height: 50%; border: none; border-bottom: 1px solid #222; }
+            .middle-track .panel { height: 100%; }
+        }
     </style>
 </head>
 <body>
+
+<div class="mobile-nav-hud" id="mobileHud">
+    <span class="hud-pill" id="pill-0">Actions</span>
+    <span class="hud-pill active" id="pill-1">Chat Logs</span>
+    <span class="hud-pill" id="pill-2">Grimoire</span>
+</div>
 
 <div id="gameOverScreen" class="game-over-box" style="display:none;">
     <div class="game-over-title" id="victoryBanner">VICTORY ACHIEVED!</div>
@@ -228,45 +280,49 @@
     <div class="manifest-container" id="victoryManifest"></div>
 </div>
 
-<div class="container">
-    <div class="panel top-left">
-        <div class="panel-header" id="topLeftHeader">Interaction Panel</div>
-        <div class="panel-body" id="topLeftBody">Loading panel access...</div>
+<div class="container" id="swipeContainer">
+    <div class="left-track">
+        <div class="panel top-left">
+            <div class="panel-header" id="topLeftHeader">Interaction Panel</div>
+            <div class="panel-body" id="topLeftBody">Loading panel access...</div>
+        </div>
+        <div class="panel bottom-left">
+            <div class="panel-header" id="bottomLeftHeader">Identity Context</div>
+            <div class="panel-body" id="bottomLeftBody" style="padding:0; display:flex; flex-direction:column; height:100%;">Loading channel access...</div>
+        </div>
     </div>
 
-    <div class="panel bottom-left">
-        <div class="panel-header" id="bottomLeftHeader">Identity Context</div>
-        <div class="panel-body" id="bottomLeftBody" style="padding:0; display:flex; flex-direction:column; height:100%;">Loading channel access...</div>
-    </div>
-
-    <div class="panel middle">
-        <div id="timerBanner" class="timer-banner">SYNCING STATE...</div>
-        <div class="panel-body" style="padding:0;">
-            <div class="chat-wrap">
-                <div class="chat-messages" id="mainChatMsgs"></div>
-                <div id="courtArea"></div>
-                <div class="chat-input-row" id="mainChatInputRow">
-                    <input id="mainChatInp" placeholder="Type to global chat..." autocomplete="off">
-                    <button id="mainChatSend">Send</button>
+    <div class="middle-track">
+        <div class="panel middle">
+            <div id="timerBanner" class="timer-banner">SYNCING STATE...</div>
+            <div class="panel-body" style="padding:0;">
+                <div class="chat-wrap">
+                    <div class="chat-messages" id="mainChatMsgs"></div>
+                    <div id="courtArea"></div>
+                    <div class="chat-input-row" id="mainChatInputRow">
+                        <input id="mainChatInp" placeholder="Type to global chat..." autocomplete="off">
+                        <button id="mainChatSend">Send</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="panel top-right">
-        <div class="panel-header">Personal Testament (Will)</div>
-        <div class="panel-body" style="padding:0;">
-            <textarea id="willTextarea" class="will-box" placeholder="Your testament will be published automatically upon your elimination..."></textarea>
+    <div class="right-track">
+        <div class="panel top-right">
+            <div class="panel-header">Personal Testament (Will)</div>
+            <div class="panel-body" style="padding:0;">
+                <textarea id="willTextarea" class="will-box" placeholder="Your testament will be published automatically upon your elimination..."></textarea>
+            </div>
         </div>
-    </div>
-
-    <div class="panel bottom-right">
-        <div class="panel-header">Grimoire Database (Wiki)</div>
-        <div class="panel-body" style="padding:0; display:flex; flex-direction:column; height:100%;">
-            <div class="wiki-output" id="wikiOut">Type "guide", "priority list", or any Role Name below to query information data.</div>
-            <div class="chat-input-row">
-                <input id="wikiInp" placeholder="Query keyword..." autocomplete="off">
-                <button id="wikiSend">Query</button>
+        <div class="panel bottom-right">
+            <div class="panel-header">Grimoire Database (Wiki)</div>
+            <div class="panel-body" style="padding:0; display:flex; flex-direction:column; height:100%;">
+                <div class="wiki-output" id="wikiOut">Type "guide", "priority list", or any Role Name below to query information data.</div>
+                <div class="chat-input-row">
+                    <input id="wikiInp" placeholder="Query keyword..." autocomplete="off">
+                    <button id="wikiSend">Query</button>
+                </div>
             </div>
         </div>
     </div>
@@ -336,6 +392,7 @@ async function bootstrapGame() {
     }
 
     setupWiki();
+    setupMobileSwipeGestures();
     syncGameEngine();
 }
 
@@ -360,7 +417,6 @@ function syncGameEngine() {
         // --- EXTENDED PLAYER NPC SEED STAGING ---
         if (isHost && Object.keys(users).length === 1 && currentPhase !== "game_over") {
             const npcUpdates = {};
-            // Initializing 10 total simulated players to allow testing of large-scale configurations (e.g. Dragoon)
             const mockRoles = ["vampire progenitor", "jester", "doctor", "pokemon trainer", "judge", "spirit artist", "dragoon", "rando", "inflator"];
             for (let i = 1; i <= 9; i++) {
                 let suffix = i === 1 ? "alpha" : i === 2 ? "beta" : i === 3 ? "gamma" : i === 4 ? "delta" : `bot_${i}`;
@@ -382,8 +438,13 @@ function syncGameEngine() {
         playersCache = users;
         myProfile = users[myId];
 
-        if (isHost && !users[myId].role && currentPhase !== "game_over") {
-            allotIdentityRoles(users);
+        // FIXED CRITICAL RELOAD PERSISTENCE INJECTION HOOK:
+        // Only run allocation if the entire room is unassigned, preventing role resets on reload.
+        if (isHost && currentPhase !== "game_over") {
+            let spaceNeedsallotment = Object.values(users).some(u => !u.role);
+            if (spaceNeedsallotment) {
+                allotIdentityRoles(users);
+            }
         }
         
         renderIdentityPanel();
@@ -439,7 +500,6 @@ function allotIdentityRoles(users) {
     let chunks = Math.floor(playerCount / 5);
     let remainder = playerCount % 5;
 
-    // Filter roles, omitting dragoon if metric threshold is less than 10
     let eligibleRoles = { ...ROLE_DATA };
     if (playerCount < 10) {
         delete eligibleRoles["dragoon"];
@@ -503,11 +563,64 @@ function allotIdentityRoles(users) {
     Object.keys(users).forEach(id => {
         updates[`users/${id}/role`] = finalUniqueRoles[index] || "hunter";
         updates[`users/${id}/alive`] = true;
-        updates[`users/${id}/voteBonusCount`] = 0; // Tracking field for Inflator bonus credits
+        updates[`users/${id}/voteBonusCount`] = 0;
         index++;
     });
 
     update(ref(db), updates);
+}
+
+/* MOBILE SWIPE INTERACTION DETECTOR */
+function setupMobileSwipeGestures() {
+    const trackContainer = document.getElementById("swipeContainer");
+    const pills = [document.getElementById("pill-0"), document.getElementById("pill-1"), document.getElementById("pill-2")];
+    let currentTrackIndex = 1; // Start focused squarely on Middle Panel (index 1)
+    
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    function applyMobileTrackShift() {
+        if (window.innerWidth > 768) {
+            trackContainer.style.transform = "none";
+            return;
+        }
+        const displacementValue = -currentTrackIndex * 100;
+        trackContainer.style.transform = `translateX(${displacementValue}vw)`;
+        
+        // Synchronize display indicators
+        pills.forEach((p, idx) => {
+            if (idx === currentTrackIndex) p.classList.add("active");
+            else p.classList.remove("active");
+        });
+    }
+
+    window.addEventListener("touchstart", e => {
+        // Direct tap exclusion for textareas/inputs to prevent keyboard overlay interference
+        if(e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+        touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    window.addEventListener("touchend", e => {
+        if(e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+        touchEndX = e.changedTouches[0].screenX;
+        
+        const dragThreshold = 60;
+        if (touchStartX - touchEndX > dragThreshold) {
+            // Swiped Left -> Advance view rightwards
+            if (currentTrackIndex < 2) {
+                currentTrackIndex++;
+                applyMobileTrackShift();
+            }
+        } else if (touchEndX - touchStartX > dragThreshold) {
+            // Swiped Right -> Pull view leftwards
+            if (currentTrackIndex > 0) {
+                currentTrackIndex--;
+                applyMobileTrackShift();
+            }
+        }
+    }, { passive: true });
+
+    window.addEventListener("resize", applyMobileTrackShift);
 }
 
 function updateTimerView(seconds, phase) {
@@ -728,7 +841,7 @@ function setupVampireChatListeners() {
         if (!inp) return;
         const txt = inp.value.trim();
         if (!txt || resetInProgress) return;
-        push(ref(db, "vampChat"), { senderId: myId, avatar: myProfile.avatar || "", sender: p.name, text: txt });
+        push(ref(db, "vampChat"), { senderId: myId, avatar: myProfile.avatar || "", sender: myProfile.name, text: txt });
         inp.value = "";
     };
 
@@ -824,7 +937,6 @@ async function triggerInstantJudgeExecution(targetId) {
 
     sendSystemLog(`🔨 THE JUDGE HAS INTERVENED! ${myProfile.name.toUpperCase()} slams the gavel down on ${targetedUser.name.toUpperCase()}, executing them instantly!`);
     
-    // Check for collateral damage
     const targetRoleSide = ROLE_DATA[targetedUser.role]?.side;
     let judgeDies = false;
     if (targetRoleSide === "villager" || targetedUser.role === "pokemon champion") {
@@ -838,7 +950,6 @@ async function triggerInstantJudgeExecution(targetId) {
         await executePlayerDeath(myId);
     }
 
-    // Force forward into Night phase immediately
     if (currentPhase !== "game_over") {
         update(ref(db, "gameState"), {
             phase: "night",
@@ -852,7 +963,6 @@ async function triggerInstantJudgeExecution(targetId) {
 function submitNightAction(targetId) {
     if (resetInProgress) return;
 
-    // Consecutive night choice validation parameters
     if (myProfile.role === "doctor" || myProfile.role === "spirit artist") {
         const lastChoice = localStorage.getItem(`lastTarget_${myProfile.role}`);
         if (lastChoice === targetId) {
@@ -928,7 +1038,6 @@ async function evaluateVotingTally() {
     let activePlayersCount = Object.values(playersCache).filter(p => p.alive).length;
     let threshold = Math.ceil(activePlayersCount * 0.5);
 
-    // Compute tallies compiling Inflator vote bonuses
     Object.entries(votes).forEach(([voterId, tId]) => {
         const bonusWeight = playersCache[voterId]?.voteBonusCount || 0;
         tallies[tId] = (tallies[tId] || 0) + 1 + bonusWeight;
@@ -940,7 +1049,6 @@ async function evaluateVotingTally() {
     });
 
     if (courtTargetId) {
-        // Dragoon Immediate Death Guard Rail Clause
         if (playersCache[courtTargetId]?.role === "dragoon") {
             sendSystemLog(`🔥 DRAGOON NOMINATED! ${playersCache[courtTargetId].name.toUpperCase()} was nominated by the town during the day, triggering instant immolation!`);
             await executePlayerDeath(courtTargetId);
@@ -1062,7 +1170,6 @@ async function processNightActions() {
         }
     });
 
-    // 1. Confusion Vampire Redirect Loop
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "confusion vampire" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -1075,7 +1182,6 @@ async function processNightActions() {
         }
     });
 
-    // 2. Ice Cream Maker Freeze Loop
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "ice cream maker" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -1084,21 +1190,18 @@ async function processNightActions() {
         }
     });
 
-    // 3. Spirit Artist Invisibility Setup
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "spirit artist" && interactionTargets[id]) {
             invisiblePlayers.add(interactionTargets[id]);
         }
     });
 
-    // 4. Doctor Protection Injection
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "doctor" && interactionTargets[id]) {
             doctorSaves.add(interactionTargets[id]);
         }
     });
 
-    // 5. Witch Potion Application Loop
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "witch" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -1114,40 +1217,34 @@ async function processNightActions() {
         }
     });
 
-    // Clean actions hitting invisible vectors
     Object.keys(interactionTargets).forEach(actorId => {
         if (playersCache[actorId].role !== "witch" && playersCache[actorId].role !== "spirit artist" && invisiblePlayers.has(interactionTargets[actorId])) {
             delete interactionTargets[actorId];
         }
     });
 
-    // 6. Holy Knight Ward
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "holy knight" && interactionTargets[id]) {
             protectiveWards.add(interactionTargets[id]);
         }
     });
 
-    // 7. Core Interactive Action Resolution
     for (const [id, p] of Object.entries(playersCache)) {
         let choice = interactionTargets[id];
         if (!choice) continue;
 
-        // Inflator Action Execution
         if (p.role === "inflator") {
             let currentBonus = playersCache[choice]?.voteBonusCount || 0;
             let finalBonus = currentBonus + 1;
             await update(ref(db, `users/${choice}`), { voteBonusCount: finalBonus });
             sendSystemLog(`🎈 AN INFLATOR EXPANDS A BALLOON! A hidden vote weight has been appended permanently to a resident.`);
             
-            // Inflator Instant Win Calculation Metric Check
             if (finalBonus === initialMatchCount) {
                 update(ref(db, "gameState"), { phase: "game_over", winnerMessage: `🎈 INFLATOR VICTORY! ${p.name.toUpperCase()} INFLATED A RESIDENT'S WEIGHT TO MATCH INITIAL MATCH COUNT (${initialMatchCount}) EXACTLY!` });
                 return;
             }
         }
 
-        // Dragoon Devourment Action
         if (p.role === "dragoon") {
             deadQueue.add(choice);
             sendSystemLog(`🐉 THE DRAGON FEEDS: A resident was fed to the dragon tonight and incinerated.`);
@@ -1165,7 +1262,6 @@ async function processNightActions() {
                 p.fedVamps = cur + 1;
             }
 
-            // Dragoon Win Condition check
             if ((p.fedVills || 0) >= 2 && (p.fedVamps || 0) >= 2) {
                 update(ref(db, "gameState"), { phase: "game_over", winnerMessage: `🐉 DRAGOON VICTORY! ${p.name.toUpperCase()} SUCCESSFULLY FED 2 VILLAGERS AND 2 VAMPIRES TO THE DRAGON!` });
                 return;
@@ -1192,10 +1288,9 @@ async function processNightActions() {
 
         if (p.role === "vampire progenitor") {
             let targetUnit = playersCache[choice];
-            // Rando Neutral Redirect Trap Protection Clause
             if (targetUnit && targetUnit.role === "rando") {
-                deadQueue.add(id); // Progenitor Dies
-                await update(ref(db, `users/${choice}`), { role: "vampire progenitor" }); // Rando inherits mantle
+                deadQueue.add(id); 
+                await update(ref(db, `users/${choice}`), { role: "vampire progenitor" }); 
                 sendSystemLog(`🎲 RANDO TRAP TRIGGERED! The Vampire Progenitor attempted to bite the rando target, killing the Progenitor instantly! The rando transforms into the new Progenitor.`);
             } else {
                 if (protectiveWards.has(choice)) {
@@ -1319,7 +1414,6 @@ function setupLobbyReturnRoute() {
             resetInProgress = true;
             document.getElementById("gameOverScreen").style.display = "none";
             
-            // Wipe runtime variables out of memory
             localStorage.removeItem("lastTarget_doctor");
             localStorage.removeItem("lastTarget_spirit artist");
             
