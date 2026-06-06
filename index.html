@@ -49,6 +49,7 @@
             width: 30px;
             height: 30px;
             border-radius: 50%;
+            background: #222;
         }
 
         .ticket {
@@ -84,11 +85,20 @@
             padding: 10px;
             border: none;
             outline: none;
+            background: #1a1a1a;
+            color: white;
         }
 
         button {
             padding: 10px;
             cursor: pointer;
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+        }
+
+        button:hover {
+            background: #444;
         }
 
         .row {
@@ -112,13 +122,11 @@
 
 <div class="container">
 
-    <!-- TOP LEFT (LOBBY USERS) -->
     <div class="panel top-left">
         <h3 style="padding:10px;margin:0;">Lobby</h3>
         <div id="users"></div>
     </div>
 
-    <!-- BOTTOM LEFT (CONTROLS) -->
     <div class="panel bottom-left">
         <div class="row">
             <button id="readyBtn" class="small-btn">Ready</button>
@@ -128,14 +136,12 @@
         <div id="startPanel"></div>
     </div>
 
-    <!-- MIDDLE (CHAT) -->
     <div class="panel middle" id="middlePanel">
         <div style="padding:10px;">
             <button id="loginBtn">Log in with Discord</button>
         </div>
     </div>
 
-    <!-- RIGHT PANELS RESTORED -->
     <div class="panel top-right"></div>
     <div class="panel bottom-right"></div>
 
@@ -154,7 +160,7 @@ import {
     update
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
 
-/* FIREBASE */
+/* FIREBASE CONFIGURATION */
 const firebaseConfig = {
     apiKey: "AIzaSyCBanAFKnKzmPF3zzYn8rcKp9YmuzaWANE",
     authDomain: "goldi-3e679.firebaseapp.com",
@@ -165,17 +171,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-/* DISCORD */
+/* DISCORD CONFIGURATION */
 const CLIENT_ID = "1332728969958527058";
 const REDIRECT_URI = "https://best1111-dev.github.io/goldi-web/";
 
 let currentUser = null;
 let currentRoom = "lobby";
 
-/* LOGIN */
+/* LOGIN TRIGGER */
 document.addEventListener("click", (e) => {
     if (e.target && e.target.id === "loginBtn") {
-
         const url =
             "https://discord.com/oauth2/authorize" +
             `?client_id=${CLIENT_ID}` +
@@ -187,19 +192,17 @@ document.addEventListener("click", (e) => {
     }
 });
 
-/* AUTO RUN ON LOAD */
+/* RUN INITIALIZATION ON LOAD */
 loadUser();
 
-/* LOAD USER */
+/* EXTRACTION AND DATA HYDRATION */
 async function loadUser() {
-
     const hash = new URLSearchParams(location.hash.substring(1));
     const token = hash.get("access_token");
 
     if (token) {
         localStorage.setItem("token", token);
-
-        // ONLY clean URL (DO NOT reload)
+        // Clean URL fragment instantly without refreshing page
         history.replaceState({}, "", location.pathname);
     }
 
@@ -207,55 +210,64 @@ async function loadUser() {
     if (!saved) return;
 
     try {
+        // FIX: Route through a CORS proxy to prevent browser security blocks
+        const targetUrl = "https://discord.com/api/users/@me";
+        const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
 
-        const res = await fetch("https://discord.com/api/users/@me", {
+        const res = await fetch(proxyUrl, {
             headers: {
                 Authorization: `Bearer ${saved}`
             }
         });
 
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Discord API rejected request or token expired");
 
         currentUser = await res.json();
-
-        // IMPORTANT: prevent double init bugs
         if (!currentUser) return;
+
+        // Ensure fallback string if user doesn't have custom avatar
+        const userAvatar = currentUser.avatar || "";
 
         await set(ref(db, "users/" + currentUser.id), {
             name: currentUser.username,
-            avatar: currentUser.avatar,
+            avatar: userAvatar,
             ready: false,
             room: "lobby"
         });
 
+        // Initialize user experience panels
         initChat();
         listenUsers();
         listenMessages();
 
     } catch (err) {
-        console.log("Login failed:", err);
+        console.error("Login verification stalled:", err);
         localStorage.removeItem("token");
     }
 }
-/* USERS LIST */
+
+/* TRACK LOBBY USERS */
 function listenUsers() {
     onValue(ref(db, "users"), snap => {
-
         const data = snap.val() || {};
         const box = document.getElementById("users");
         box.innerHTML = "";
 
         Object.entries(data).forEach(([id, u]) => {
+            if (!u) return;
 
             const div = document.createElement("div");
             div.className = "user";
 
-            const avatar = `https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png`;
+            // Fallback to default Discord avatar asset if null
+            const avatar = u.avatar 
+                ? `https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png` 
+                : `https://cdn.discordapp.com/embed/avatars/0.png`;
 
             div.innerHTML = `
                 <img class="avatar" src="${avatar}">
                 <div>
-                    ${u.name}
+                    ${u.name || "Unknown User"}
                     ${u.ready ? '<span class="ticket">🎟</span>' : ''}
                 </div>
             `;
@@ -265,42 +277,35 @@ function listenUsers() {
     });
 }
 
-/* READY */
+/* LOBBY READY FUNCTIONALITY */
 document.getElementById("readyBtn").onclick = async () => {
     if (!currentUser) return;
 
     const userRef = ref(db, "users/" + currentUser.id);
-
     const snap = await new Promise(res =>
         onValue(userRef, res, { onlyOnce: true })
     );
 
+    const currentData = snap.val() || { ready: false };
     update(userRef, {
-        ready: !snap.val().ready
+        ready: !currentData.ready
     });
 };
 
-/* START */
+/* LOBBY START FUNCTIONALITY */
 document.getElementById("startBtn").onclick = async () => {
-
     const snap = await new Promise(res =>
         onValue(ref(db, "users"), res, { onlyOnce: true })
     );
 
     const users = snap.val() || {};
-
-    const ready = Object.entries(users)
-        .filter(([_, u]) => u.ready);
-
+    const ready = Object.entries(users).filter(([_, u]) => u && u.ready);
     const panel = document.getElementById("startPanel");
 
     panel.innerHTML = `
         <h4>Ready Players</h4>
-        ${ready.map(([id, u]) => `
-            <div>${u.name}</div>
-        `).join("")}
-
-        <button id="startAnyways">Start Anyways</button>
+        ${ready.map(([id, u]) => `<div>${u.name}</div>`).join("")}
+        <button id="startAnyways" style="margin-top:10px;">Start Anyways</button>
     `;
 
     document.getElementById("startAnyways").onclick = () => {
@@ -313,34 +318,28 @@ document.getElementById("startBtn").onclick = async () => {
     };
 };
 
-/* CHAT UI */
+/* INITIALIZE CHAT UI SYSTEM */
 function initChat() {
-
     const middle = document.getElementById("middlePanel");
 
     middle.innerHTML = `
         <div class="chat">
-
             <div class="messages" id="messages"></div>
-
             <div class="input-box">
                 <input id="msg" placeholder="Type message...">
                 <button id="send">Send</button>
             </div>
-
         </div>
     `;
 
     document.getElementById("send").onclick = sendMessage;
-
     document.getElementById("msg").addEventListener("keydown", e => {
         if (e.key === "Enter") sendMessage();
     });
 }
 
-/* SEND MESSAGE */
+/* DISPATCH MESSAGES TO DB */
 async function sendMessage() {
-
     const input = document.getElementById("msg");
     const text = input.value.trim();
     if (!text || !currentUser) return;
@@ -348,7 +347,7 @@ async function sendMessage() {
     await push(ref(db, "messages"), {
         userId: currentUser.id,
         name: currentUser.username,
-        avatar: currentUser.avatar,
+        avatar: currentUser.avatar || "",
         room: currentRoom,
         text,
         time: Date.now()
@@ -357,17 +356,18 @@ async function sendMessage() {
     input.value = "";
 }
 
-/* RECEIVE MESSAGES */
+/* RENDER INCOMING CHAT MESSAGES */
 function listenMessages() {
-
     const box = document.getElementById("messages");
 
     onChildAdded(ref(db, "messages"), snap => {
-
         const m = snap.val();
-        if (m.room !== currentRoom) return;
+        // Defensive check: skip if data node is malformed or wrong room
+        if (!m || m.room !== currentRoom) return;
 
-        const avatar = `https://cdn.discordapp.com/avatars/${m.userId}/${m.avatar}.png`;
+        const avatar = m.avatar 
+            ? `https://cdn.discordapp.com/avatars/${m.userId}/${m.avatar}.png` 
+            : `https://cdn.discordapp.com/embed/avatars/0.png`;
 
         const div = document.createElement("div");
         div.className = "message";
@@ -375,7 +375,7 @@ function listenMessages() {
         div.innerHTML = `
             <img class="avatar" src="${avatar}">
             <div>
-                <b>${m.name}</b><br>
+                <b>${m.name || "System"}</b><br>
                 ${m.text}
             </div>
         `;
@@ -386,6 +386,5 @@ function listenMessages() {
 }
 
 </script>
-
 </body>
 </html>
