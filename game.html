@@ -82,19 +82,50 @@
         .target-btn:hover { background: #fff; }
         .target-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
 
-        /* CHATS WITH AVATARS */
+        /* MIDDLE PANEL CHAT ALIGNED TO SCREENSHOT IMAGE_E58BD9 */
         .chat-wrap { display: flex; flex-direction: column; height: 100%; }
-        .chat-messages { flex: 1; overflow-y: auto; padding: 5px; }
-        .chat-input-row { display: flex; border-top: 1px solid #333; }
-        .chat-input-row input { flex: 1; padding: 10px; border: none; background: #222; color: white; outline: none; }
-        .chat-input-row button { padding: 10px 15px; background: #333; color: white; border: none; cursor: pointer; }
-        .chat-input-row button:hover { background: #444; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 15px; background: #0b0b0b; }
+        .chat-input-row { display: flex; border-top: 1px solid #252525; background: #141414; }
+        .chat-input-row input { flex: 1; padding: 14px; border: none; background: #181818; color: white; outline: none; font-size: 15px; }
+        .chat-input-row button { padding: 14px 24px; background: #c99700; color: black; font-weight: bold; border: none; cursor: pointer; font-size: 14px; }
+        .chat-input-row button:hover { background: #fff; }
 
-        .msg { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; line-height: 1.4; }
-        .msg-avatar { width: 28px; height: 28px; border-radius: 50%; background: #333; flex-shrink: 0; object-fit: cover; }
-        .msg.sys { color: #00ffcc; font-weight: bold; display: block; padding: 4px 0; }
-        .msg.vamp { color: #ff3333; }
-        .msg.priv { color: #ff00ff; font-style: italic; }
+        .msg { 
+            display: flex; 
+            align-items: flex-start; 
+            gap: 14px; 
+            margin-bottom: 20px; 
+        }
+        .msg-avatar { 
+            width: 44px; 
+            height: 44px; 
+            border-radius: 50%; 
+            background: #2a2a2a; 
+            flex-shrink: 0; 
+            object-fit: cover; 
+            border: 1px solid #333;
+        }
+        .msg-content-block {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .msg-username {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffffff;
+            line-height: 1.2;
+        }
+        .msg-text {
+            font-size: 15px;
+            color: #e5e5e5;
+            word-break: break-word;
+            line-height: 1.3;
+        }
+        
+        .msg.sys { display: block; color: #00ffcc; font-weight: bold; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #222; }
+        .msg.vamp .msg-username { color: #ff4444; }
+        .msg.priv { font-style: italic; opacity: 0.65; }
 
         /* WILLS & WIKI */
         textarea.will-box {
@@ -137,7 +168,7 @@
 
         /* GAME OVER SCREEN OVERLAY */
         .game-over-box {
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.96);
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
             display: flex; flex-direction: column;
@@ -145,9 +176,9 @@
             z-index: 9999;
             text-align: center;
         }
-        .game-over-title { font-size: 48px; color: gold; font-weight: bold; margin-bottom: 20px; }
-        .lobby-return-btn { background: #d4af37; color: black; border: none; padding: 15px 30px; font-size: 20px; font-weight: bold; cursor: pointer; border-radius: 5px; }
-        .lobby-return-btn:hover { background: #fff; }
+        .game-over-title { font-size: 44px; color: gold; font-weight: bold; margin-bottom: 25px; padding: 0 20px; }
+        .lobby-return-btn { background: #d4af37; color: black; border: none; padding: 16px 36px; font-size: 20px; font-weight: bold; cursor: pointer; border-radius: 6px; text-transform: uppercase; }
+        .lobby-return-btn:hover { background: #fff; box-shadow: 0 0 15px rgba(255,255,255,0.4); }
         
         .role-badge {
             display: inline-flex;
@@ -161,7 +192,7 @@
 
 <div id="gameOverScreen" class="game-over-box" style="display:none;">
     <div class="game-over-title" id="victoryBanner">VICTORY ACHIEVED!</div>
-    <button class="lobby-return-btn" id="returnToLobbyBtn">Return to Lobby</button>
+    <button class="lobby-return-btn" id="returnToLobbyBtn">Return to Lobby & Wipe Match</button>
 </div>
 
 <div class="container">
@@ -211,7 +242,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import {
-    getDatabase, ref, set, push, onValue, update, runTransaction, get, onChildAdded
+    getDatabase, ref, set, push, onValue, update, runTransaction, get, onChildAdded, remove
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
 
 /* FIREBASE INITIALIZATION */
@@ -276,11 +307,19 @@ function syncGameEngine() {
     onValue(ref(db, "users"), async (snap) => {
         let users = snap.val() || {};
         
+        // Anti-Trap Security: Re-register profile structure if cleared out during a full wipe
+        if (!users[myId]) {
+            const myReentry = {};
+            myReentry[`users/${myId}`] = { name: myStoredName, room: "game", alive: true, ready: true, avatar: myStoredAvatar };
+            await update(ref(db), myReentry);
+            return;
+        }
+
         const sortedIds = Object.keys(users).sort();
         isHost = (sortedIds[0] === myId);
 
-        // --- SINGLE PLAYER NPC TESTING SEED INJECTOR ---
-        if (isHost && Object.keys(users).length === 1) {
+        // --- SINGLE PLAYER NPC ENGINE SEED ---
+        if (isHost && Object.keys(users).length === 1 && currentPhase !== "game_over") {
             const npcUpdates = {};
             npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true, role: "vampire progenitor", avatar: "" };
             npcUpdates["users/npc_beta"] = { name: "NPC Beta", room: "game", alive: true, ready: true, role: "jester", avatar: "" };
@@ -295,12 +334,7 @@ function syncGameEngine() {
         playersCache = users;
         myProfile = users[myId];
 
-        if (!myProfile || myProfile.room !== "game") {
-            window.location.href = "index.html";
-            return;
-        }
-
-        if (isHost && !users[myId].role) {
+        if (isHost && !users[myId].role && currentPhase !== "game_over") {
             allotIdentityRoles(users);
         }
         
@@ -347,8 +381,6 @@ function allotIdentityRoles(users) {
     const playerCount = entries.length;
 
     let pool = [];
-    
-    // Core base structures configurations calculated as 5 player chunks
     let chunks = Math.floor(playerCount / 5);
     let remainder = playerCount % 5;
 
@@ -356,7 +388,6 @@ function allotIdentityRoles(users) {
     let neutsPool = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side === "neutral");
     let villsPool = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side === "villager" && r !== "detective");
 
-    // Shuffle base pools cleanly
     vampsPool.sort(() => Math.random() - 0.5);
     neutsPool.sort(() => Math.random() - 0.5);
     villsPool.sort(() => Math.random() - 0.5);
@@ -370,7 +401,6 @@ function allotIdentityRoles(users) {
             if (villsPool.length > 0) pool.push(villsPool.pop());
         }
         
-        // Additional modular remainder loop priority list sequencing: vill, vamp, vill, neut, vill
         let step = 0;
         while (remainder > 0) {
             if (step === 0 || step === 2 || step === 4) {
@@ -385,14 +415,12 @@ function allotIdentityRoles(users) {
             step = (step + 1) % 5;
         }
     } else {
-        // Fallback for less than 5 units setup configuration safety maps
         if (playerCount >= 1) pool.push("vampire progenitor");
         if (playerCount >= 2) pool.push("detective");
         if (playerCount >= 3 && neutsPool.length > 0) pool.push(neutsPool.pop());
         if (playerCount >= 4 && villsPool.length > 0) pool.push(villsPool.pop());
     }
 
-    // Clean duplicate role overlaps if chunks contain duplicate core cards
     let finalUniqueRoles = [];
     let absoluteRegistry = new Set();
     
@@ -401,7 +429,6 @@ function allotIdentityRoles(users) {
             finalUniqueRoles.push(role);
             absoluteRegistry.add(role);
         } else {
-            // Supply random variant fallback
             let backup = villsPool.pop() || "hunter";
             finalUniqueRoles.push(backup);
             absoluteRegistry.add(backup);
@@ -522,14 +549,22 @@ function setupChatChannels() {
             img.className = "msg-avatar";
             img.src = m.avatar ? `https://cdn.discordapp.com/avatars/${m.senderId}/${m.avatar}.png` : "https://cdn.discordapp.com/embed/avatars/0.png";
             
-            const b = document.createElement("b");
-            b.textContent = m.sender + ": ";
-            const span = document.createElement("span");
-            span.textContent = m.text;
+            const contentBlock = document.createElement("div");
+            contentBlock.className = "msg-content-block";
+
+            const nameEl = document.createElement("div");
+            nameEl.className = "msg-username";
+            nameEl.textContent = m.sender;
+
+            const textEl = document.createElement("div");
+            textEl.className = "msg-text";
+            textEl.textContent = m.text;
+            
+            contentBlock.appendChild(nameEl);
+            contentBlock.appendChild(textEl);
             
             div.appendChild(img);
-            div.appendChild(b);
-            div.appendChild(span);
+            div.appendChild(contentBlock);
         }
         newMainBox.appendChild(div);
         newMainBox.scrollTop = newMainBox.scrollHeight;
@@ -600,14 +635,22 @@ function setupVampireChatListeners() {
         img.className = "msg-avatar";
         img.src = m.avatar ? `https://cdn.discordapp.com/avatars/${m.senderId}/${m.avatar}.png` : "https://cdn.discordapp.com/embed/avatars/0.png";
 
-        const b = document.createElement("b");
-        b.textContent = m.sender + ": ";
-        const span = document.createElement("span");
-        span.textContent = m.text;
+        const contentBlock = document.createElement("div");
+        contentBlock.className = "msg-content-block";
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "msg-username";
+        nameEl.textContent = m.sender;
+
+        const textEl = document.createElement("div");
+        textEl.className = "msg-text";
+        textEl.textContent = m.text;
+        
+        contentBlock.appendChild(nameEl);
+        contentBlock.appendChild(textEl);
         
         div.appendChild(img);
-        div.appendChild(b);
-        div.appendChild(span);
+        div.appendChild(contentBlock);
         vampBox.appendChild(div);
         vampBox.scrollTop = vampBox.scrollHeight;
     });
@@ -801,7 +844,6 @@ async function resolveCourtVerdict() {
     if (gCount > iCount) {
         sendSystemLog(`By a verdict of ${gCount} to ${iCount}, ${court.targetName} has been executed.`);
         
-        // JESTER EXPLICIT WIN HOOK CHECK
         let targetedPlayerRole = playersCache[court.targetId]?.role;
         if (targetedPlayerRole === "jester") {
             await update(ref(db, `users/${court.targetId}`), { alive: false });
@@ -874,7 +916,6 @@ async function processNightActions() {
         }
     });
 
-    // P1: Confusion Vampire Redirects
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "confusion vampire" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -887,7 +928,6 @@ async function processNightActions() {
         }
     });
 
-    // P2: Ice Cream Maker Freezes
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "ice cream maker" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -896,7 +936,6 @@ async function processNightActions() {
         }
     });
 
-    // P3: Witch Potions Draw & Doctor Visits Hook
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "doctor" && interactionTargets[id]) {
             doctorSaves.add(interactionTargets[id]);
@@ -918,21 +957,18 @@ async function processNightActions() {
         }
     });
 
-    // Filter hidden target visits out
     Object.keys(interactionTargets).forEach(actorId => {
         if (playersCache[actorId].role !== "witch" && invisiblePlayers.has(interactionTargets[actorId])) {
             delete interactionTargets[actorId];
         }
     });
 
-    // P4: Holy Knight Wards
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "holy knight" && interactionTargets[id]) {
             protectiveWards.add(interactionTargets[id]);
         }
     });
 
-    // P5-P7: Vampire Progenitor, Pokemon Trainer & Hunter Executions
     Object.entries(playersCache).forEach(([id, p]) => {
         let choice = interactionTargets[id];
         if (!choice) return;
@@ -943,18 +979,15 @@ async function processNightActions() {
                 deadQueue.add(id);
                 sendSystemLog(`🧢 A Pokémon Trainer wandered into the Progenitor's lair and was consumed.`);
             } else if (targetUnit) {
-                // Execute catch count progression
                 const rarities = ["common", "common", "uncommon", "rare", "mythical", "legendary"];
                 let rolled = rarities[Math.floor(Math.random() * rarities.length)];
                 
                 if (rolled === "legendary") {
                     sendSystemLog(`✨ [POKEMON TRAINER]: WOW! I caught a LEGENDARY Pokémon inside ${targetUnit.name}'s house!`);
                 } else if (rolled === "mythical" || rolled === "uncommon") { 
-                    // Acts as UB/Role explicit broadcast tier
                     sendSystemLog(`💫 [POKEMON TRAINER]: Wild alert! Caught a rare entity type inside a ${targetUnit.role.toUpperCase()}'s house!`);
                 }
 
-                // Increment total counter safely inside game instances loop
                 p.pokeCount = (p.pokeCount || 0) + 1;
                 if (p.pokeCount >= 5) {
                     update(ref(db, `users/${id}`), { role: "pokemon champion" });
@@ -969,9 +1002,9 @@ async function processNightActions() {
 
         if (p.role === "vampire progenitor") {
             if (protectiveWards.has(choice)) {
-                sendSystemLog(`The Holy Knight successfully repelled a lethal nocturnal assault!`);
+                sendSystemLog("The Holy Knight successfully repelled a lethal nocturnal assault!");
             } else if (doctorSaves.has(choice)) {
-                sendSystemLog(`The Doctor successfully treated and saved the target of a brutal attack!`);
+                sendSystemLog("The Doctor successfully treated and saved the target of a brutal attack!");
             } else {
                 deadQueue.add(choice);
             }
@@ -993,7 +1026,6 @@ async function processNightActions() {
 
     let progenitorDiedThisNight = false;
 
-    // Process all night casualties safely
     for (let victimId of deadQueue) {
         if (playersCache[victimId]?.alive) {
             if (playersCache[victimId].role === "vampire progenitor") {
@@ -1031,6 +1063,8 @@ async function processNightActions() {
 }
 
 function verifyWinStateConditions() {
+    if (currentPhase === "game_over") return;
+
     let aliveVamps = 0;
     let aliveTown = 0;
 
@@ -1038,9 +1072,11 @@ function verifyWinStateConditions() {
         if (!p.alive) return;
         const side = ROLE_DATA[p.role]?.side;
         if (side === "vampire") aliveVamps++;
-        // Champ side flips to town alignment instantly
         if (side === "villager" || p.role === "pokemon champion") aliveTown++;
     });
+
+    // Handle early condition guard rails if state calculation yields empty cache sets during load
+    if (Object.keys(playersCache).length <= 1) return;
 
     if (aliveVamps === 0) {
         update(ref(db, "gameState"), { phase: "game_over", winnerMessage: "VILLAGERS TRIUMPH! ALL VAMPIRES EXTERMINATED!" });
@@ -1058,10 +1094,43 @@ function displayGameOverOverlay(msg) {
     }
 }
 
+/* DESTRUCTIVE DATABASE PURGE & RESET FUNCTION */
 function setupLobbyReturnRoute() {
     const btn = document.getElementById("returnToLobbyBtn");
     if (btn) {
-        btn.onclick = () => {
+        btn.onclick = async () => {
+            // Dismiss UI overlay immediately
+            document.getElementById("gameOverScreen").style.display = "none";
+            
+            // Cascading destructive purge to completely reset room configuration
+            await remove(ref(db, "gameState"));
+            await remove(ref(db, "actions"));
+            await remove(ref(db, "votes"));
+            await remove(ref(db, "mainChat"));
+            await remove(ref(db, "vampChat"));
+            await remove(ref(db, "wills"));
+            
+            const userSnap = await get(ref(db, "users"));
+            const currentUsers = userSnap.val() || {};
+            const cleaningMap = {};
+            
+            Object.entries(currentUsers).forEach(([id, p]) => {
+                if (id.startsWith("npc_") || id === "npc_alpha" || id === "npc_beta" || id === "npc_gamma" || id === "npc_delta") {
+                    // Force delete the old stale NPCs
+                    cleaningMap[`users/${id}`] = null;
+                } else {
+                    // Strip game variables off human players and reset them to room selection staging
+                    cleaningMap[`users/${id}/role`] = null;
+                    cleaningMap[`users/${id}/alive`] = true;
+                    cleaningMap[`users/${id}/ready`] = false;
+                    cleaningMap[`users/${id}/room`] = "lobby";
+                    cleaningMap[`users/${id}/pokeCount`] = null;
+                }
+            });
+            
+            await update(ref(db), cleaningMap);
+            
+            // Redirect smoothly back to home selection hub
             window.location.href = "index.html";
         };
     }
