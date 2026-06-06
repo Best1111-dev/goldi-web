@@ -82,7 +82,7 @@
         .target-btn:hover { background: #fff; }
         .target-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
 
-        /* MIDDLE PANEL CHAT ALIGNED TO SCREENSHOT IMAGE_E58BD9 */
+        /* CHATS INTERFACE VISUAL STYLE */
         .chat-wrap { display: flex; flex-direction: column; height: 100%; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 15px; background: #0b0b0b; }
         .chat-input-row { display: flex; border-top: 1px solid #252525; background: #141414; }
@@ -152,7 +152,7 @@
             white-space: pre-wrap;
         }
 
-        /* COURT OVERLAY CONTAINER */
+        /* COURT DISPLAY */
         .court-box {
             background: #262626;
             padding: 15px;
@@ -166,7 +166,7 @@
         .btn-innocent { background: #33cc33; color: white; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; }
         .btn-lawyer { background: #9400d3; color: white; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; }
 
-        /* GAME OVER SCREEN OVERLAY */
+        /* OVERLAYS */
         .game-over-box {
             background: rgba(0,0,0,0.96);
             position: fixed;
@@ -262,6 +262,7 @@ let currentPhase = "";
 let isHost = false;
 let witchPotionThisNight = "";
 let hasVotedToday = false;
+let resetInProgress = false; // System lock guard parameter
 
 const ROLE_DATA = {
     "confusion vampire": { p: 1, side: "vampire", icon: "🌀", desc: "Choose 1 target at night. Switch the target of their action to another random player." },
@@ -305,9 +306,9 @@ function syncGameEngine() {
     const myStoredAvatar = localStorage.getItem("myAvatar") || "";
 
     onValue(ref(db, "users"), async (snap) => {
+        if (resetInProgress) return;
         let users = snap.val() || {};
         
-        // Anti-Trap Security: Re-register profile structure if cleared out during a full wipe
         if (!users[myId]) {
             const myReentry = {};
             myReentry[`users/${myId}`] = { name: myStoredName, room: "game", alive: true, ready: true, avatar: myStoredAvatar };
@@ -318,7 +319,7 @@ function syncGameEngine() {
         const sortedIds = Object.keys(users).sort();
         isHost = (sortedIds[0] === myId);
 
-        // --- SINGLE PLAYER NPC ENGINE SEED ---
+        // --- SINGLE PLAYER NPC SEED STAGING ---
         if (isHost && Object.keys(users).length === 1 && currentPhase !== "game_over") {
             const npcUpdates = {};
             npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true, role: "vampire progenitor", avatar: "" };
@@ -343,6 +344,7 @@ function syncGameEngine() {
     });
 
     onValue(ref(db, "gameState"), snap => {
+        if (resetInProgress) return;
         const state = snap.val();
         if (!state) {
             if (isHost) setupDefaultGameState();
@@ -359,6 +361,8 @@ function syncGameEngine() {
 
         if (state.phase === "game_over" && state.winnerMessage) {
             displayGameOverOverlay(state.winnerMessage);
+        } else {
+            document.getElementById("gameOverScreen").style.display = "none";
         }
     });
 
@@ -472,7 +476,7 @@ function updateTimerView(seconds, phase) {
 if (!window.timerIntervalHooked) {
     window.timerIntervalHooked = true;
     setInterval(() => {
-        if (!isHost || !currentPhase || currentPhase === "game_over") return;
+        if (!isHost || !currentPhase || currentPhase === "game_over" || resetInProgress) return;
         runTransaction(ref(db, "gameState/timer"), (currentTimer) => {
             if (currentTimer === null) return 0;
             return currentTimer - 1;
@@ -537,6 +541,7 @@ function setupChatChannels() {
     oldMainBox.parentNode.replaceChild(newMainBox, oldMainBox);
 
     onChildAdded(ref(db, "mainChat"), snap => {
+        if (resetInProgress) return;
         const m = snap.val();
         if(!m) return;
         const div = document.createElement("div");
@@ -576,7 +581,7 @@ function setupChatChannels() {
     const willBox = document.getElementById("willTextarea");
     if (willBox) {
         willBox.oninput = () => {
-            if (myId && myProfile && myProfile.alive !== false) {
+            if (myId && myProfile && myProfile.alive !== false && !resetInProgress) {
                 set(ref(db, `wills/${myId}`), { name: myProfile.name, text: willBox.value });
             }
         };
@@ -607,7 +612,7 @@ function sendMainChatMessage() {
     const inp = document.getElementById("mainChatInp");
     if (!inp) return;
     const text = inp.value.trim();
-    if (!text || !myProfile) return;
+    if (!text || !myProfile || resetInProgress) return;
     if (currentPhase === "night") return;
 
     push(ref(db, "mainChat"), {
@@ -626,6 +631,7 @@ function setupVampireChatListeners() {
     vampBox.dataset.loaded = "true";
 
     onChildAdded(ref(db, "vampChat"), snap => {
+        if (resetInProgress) return;
         const m = snap.val();
         if(!m) return;
         const div = document.createElement("div");
@@ -659,7 +665,7 @@ function setupVampireChatListeners() {
         const inp = document.getElementById("vampChatInp");
         if (!inp) return;
         const txt = inp.value.trim();
-        if (!txt) return;
+        if (!txt || resetInProgress) return;
         push(ref(db, "vampChat"), { senderId: myId, avatar: myProfile.avatar || "", sender: myProfile.name, text: txt });
         inp.value = "";
     };
@@ -669,6 +675,7 @@ function setupVampireChatListeners() {
 }
 
 function sendSystemLog(txt) {
+    if (resetInProgress) return;
     push(ref(db, "mainChat"), { sender: "System", text: txt, type: "sys" });
 }
 
@@ -728,7 +735,7 @@ function renderInteractionGrid() {
 }
 
 function castLobbyVote(targetId) {
-    if (hasVotedToday) return;
+    if (hasVotedToday || resetInProgress) return;
     hasVotedToday = true;
     renderInteractionGrid(); 
 
@@ -737,6 +744,7 @@ function castLobbyVote(targetId) {
 }
 
 function submitNightAction(targetId) {
+    if (resetInProgress) return;
     if (myProfile.role === "investigator" || myProfile.role === "psychic") {
         if (!window.firstTarget) {
             window.firstTarget = targetId;
@@ -778,7 +786,7 @@ function renderCourtDisplay(court) {
 }
 
 function submitVerdict(type) {
-    if (myProfile?.alive === false) return;
+    if (myProfile?.alive === false || resetInProgress) return;
     update(ref(db, "gameState/court/voters"), { [myId]: type });
     alert(`Verdict registered as ${type.toUpperCase()}`);
 }
@@ -795,6 +803,7 @@ function executeLawyerLoop() {
 
 /* DAY PHASE COMPUTATIONS */
 async function evaluateVotingTally() {
+    if (resetInProgress) return;
     const snap = await get(ref(db, "votes"));
     const votes = snap.val() || {};
     const tallies = {};
@@ -830,6 +839,7 @@ async function evaluateVotingTally() {
 }
 
 async function resolveCourtVerdict() {
+    if (resetInProgress) return;
     const snap = await get(ref(db, "gameState/court"));
     const court = snap.val();
     if (!court || !court.active) return;
@@ -856,7 +866,7 @@ async function resolveCourtVerdict() {
         sendSystemLog(`By a verdict of ${iCount} to ${gCount}, ${court.targetName} has been found Innocent.`);
     }
 
-    if (currentPhase !== "game_over") {
+    if (currentPhase !== "game_over" && !resetInProgress) {
         update(ref(db, "gameState"), {
             phase: "night",
             timer: 40,
@@ -900,6 +910,7 @@ async function handleVampireLineageSuccession() {
 
 /* NIGHT PROCESSING RESOLUTION ENGINE */
 async function processNightActions() {
+    if (resetInProgress) return;
     const snap = await get(ref(db, "actions"));
     const acts = snap.val() || {};
     
@@ -1063,7 +1074,9 @@ async function processNightActions() {
 }
 
 function verifyWinStateConditions() {
-    if (currentPhase === "game_over") return;
+    // CRITICAL GUARD RAIL: Do not compute if wiping a match or if data is missing
+    if (currentPhase === "game_over" || resetInProgress) return;
+    if (!playersCache || Object.keys(playersCache).length <= 1) return;
 
     let aliveVamps = 0;
     let aliveTown = 0;
@@ -1074,9 +1087,6 @@ function verifyWinStateConditions() {
         if (side === "vampire") aliveVamps++;
         if (side === "villager" || p.role === "pokemon champion") aliveTown++;
     });
-
-    // Handle early condition guard rails if state calculation yields empty cache sets during load
-    if (Object.keys(playersCache).length <= 1) return;
 
     if (aliveVamps === 0) {
         update(ref(db, "gameState"), { phase: "game_over", winnerMessage: "VILLAGERS TRIUMPH! ALL VAMPIRES EXTERMINATED!" });
@@ -1094,15 +1104,16 @@ function displayGameOverOverlay(msg) {
     }
 }
 
-/* DESTRUCTIVE DATABASE PURGE & RESET FUNCTION */
+/* TOTAL IMMUTABLE PURGE CLEANUP ENGINE ROUTINE */
 function setupLobbyReturnRoute() {
     const btn = document.getElementById("returnToLobbyBtn");
     if (btn) {
         btn.onclick = async () => {
-            // Dismiss UI overlay immediately
+            // Activate safety switch lock
+            resetInProgress = true;
             document.getElementById("gameOverScreen").style.display = "none";
             
-            // Cascading destructive purge to completely reset room configuration
+            // Hard delete all global match paths sequentially
             await remove(ref(db, "gameState"));
             await remove(ref(db, "actions"));
             await remove(ref(db, "votes"));
@@ -1110,27 +1121,32 @@ function setupLobbyReturnRoute() {
             await remove(ref(db, "vampChat"));
             await remove(ref(db, "wills"));
             
+            // Explicitly pull and destroy ALL user configurations containing NPC markers
             const userSnap = await get(ref(db, "users"));
             const currentUsers = userSnap.val() || {};
-            const cleaningMap = {};
+            const cleanUserMap = {};
             
             Object.entries(currentUsers).forEach(([id, p]) => {
-                if (id.startsWith("npc_") || id === "npc_alpha" || id === "npc_beta" || id === "npc_gamma" || id === "npc_delta") {
-                    // Force delete the old stale NPCs
-                    cleaningMap[`users/${id}`] = null;
+                if (id.startsWith("npc_") || id.includes("npc")) {
+                    // Vaporize NPC entries out of the database array entirely
+                    cleanUserMap[`users/${id}`] = null;
                 } else {
-                    // Strip game variables off human players and reset them to room selection staging
-                    cleaningMap[`users/${id}/role`] = null;
-                    cleaningMap[`users/${id}/alive`] = true;
-                    cleaningMap[`users/${id}/ready`] = false;
-                    cleaningMap[`users/${id}/room`] = "lobby";
-                    cleaningMap[`users/${id}/pokeCount`] = null;
+                    // Reset human client nodes cleanly back to room parameters
+                    cleanUserMap[`users/${id}`] = {
+                        name: p.name || "Player",
+                        room: "lobby",
+                        alive: true,
+                        ready: false,
+                        avatar: p.avatar || "",
+                        role: null
+                    };
                 }
             });
             
-            await update(ref(db), cleaningMap);
+            // Commit deep user sync update
+            await update(ref(db), cleanUserMap);
             
-            // Redirect smoothly back to home selection hub
+            // Route client gracefully back to screen context selection window
             window.location.href = "index.html";
         };
     }
