@@ -269,10 +269,18 @@ function syncGameEngine() {
         const sortedIds = Object.keys(users).sort();
         isHost = (sortedIds[0] === myId);
 
-        // --- SINGLE PLAYER NPC TESTING SEED INJECTOR ---
+        // --- FIXED NPC TESTING SEED INJECTOR ---
         if (isHost && Object.keys(users).length === 1) {
-            await set(ref(db, "users/npc_alpha"), { name: "NPC Alpha", room: "game", alive: true, ready: true });
-            await set(ref(db, "users/npc_beta"), { name: "NPC Beta", room: "game", alive: true, ready: true });
+            // Use update() on the root instead of set() to prevent wiping user data or causing race conditions
+            const npcUpdates = {};
+            npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true };
+            npcUpdates["users/npc_beta"] = { name: "NPC Beta", room: "game", alive: true, ready: true };
+            
+            // Also proactively ensure your own profile stays locked into the game room
+            npcUpdates[`users/${myId}/room`] = "game";
+            npcUpdates[`users/${myId}/alive`] = true;
+        
+            await update(ref(db), npcUpdates);
             return; 
         }
 
