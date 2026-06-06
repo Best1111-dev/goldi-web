@@ -173,17 +173,19 @@ let currentUser = null;
 let currentRoom = "lobby";
 
 /* LOGIN */
-document.getElementById("loginBtn").onclick = () => {
-    const url =
-        "https://discord.com/oauth2/authorize" +
-        `?client_id=${CLIENT_ID}` +
-        "&response_type=token" +
-        `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-        "&scope=identify`;
+document.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "loginBtn") {
 
-    window.location.href = url;
-};
+        const url =
+            "https://discord.com/oauth2/authorize" +
+            `?client_id=${CLIENT_ID}` +
+            "&response_type=token" +
+            `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+            "&scope=identify`;
 
+        window.location.href = url;
+    }
+});
 /* LOAD USER */
 async function loadUser() {
 
