@@ -92,3 +92,64 @@ body {
 .username{
     font-weight:bold;
 }
+
+.middle {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+}
+
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.input-row {
+    flex-shrink: 0;
+    border-top: 1px solid #444;
+    padding: 10px;
+}
+
+.input-row input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+}
+
+.message {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    align-items: flex-start;
+}
+
+.user-block {
+    width: 60px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+.username {
+    font-size: 12px;
+    word-break: break-word;
+}
+
+.message-text {
+    flex: 1;
+    word-break: break-word;
+}
