@@ -82,7 +82,7 @@
         .target-btn:hover { background: #fff; }
         .target-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
 
-        /* CHATS */
+        /* CHATS WITH AVATARS */
         .chat-wrap { display: flex; flex-direction: column; height: 100%; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 5px; }
         .chat-input-row { display: flex; border-top: 1px solid #333; }
@@ -90,8 +90,9 @@
         .chat-input-row button { padding: 10px 15px; background: #333; color: white; border: none; cursor: pointer; }
         .chat-input-row button:hover { background: #444; }
 
-        .msg { margin-bottom: 6px; font-size: 14px; line-height: 1.4; }
-        .msg.sys { color: #00ffcc; font-weight: bold; }
+        .msg { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; line-height: 1.4; }
+        .msg-avatar { width: 28px; height: 28px; border-radius: 50%; background: #333; flex-shrink: 0; object-fit: cover; }
+        .msg.sys { color: #00ffcc; font-weight: bold; display: block; padding: 4px 0; }
         .msg.vamp { color: #ff3333; }
         .msg.priv { color: #ff00ff; font-style: italic; }
 
@@ -222,6 +223,7 @@ let playersCache = {};
 let currentPhase = "";
 let isHost = false;
 let witchPotionThisNight = "";
+let hasVotedToday = false;
 
 const ROLE_DATA = {
     "confusion vampire": { p: 1, side: "vampire", desc: "Choose 1 target at night. Switch the target of their action to another random player." },
@@ -243,22 +245,22 @@ const ROLE_DATA = {
 bootstrapGame();
 
 async function bootstrapGame() {
-    // 1. Instantly pull propagated data from localStorage
     myId = localStorage.getItem("myId");
     const myStoredName = localStorage.getItem("myName");
+    const myStoredAvatar = localStorage.getItem("myAvatar") || "";
 
     if (!myId || !myStoredName) { 
         window.location.href = "index.html"; 
         return; 
     }
 
-    // Initialize systems
     setupWiki();
     syncGameEngine();
 }
 
 function syncGameEngine() {
     const myStoredName = localStorage.getItem("myName");
+    const myStoredAvatar = localStorage.getItem("myAvatar") || "";
 
     onValue(ref(db, "users"), async (snap) => {
         let users = snap.val() || {};
@@ -269,9 +271,9 @@ function syncGameEngine() {
         // --- SINGLE PLAYER NPC TESTING SEED INJECTOR ---
         if (isHost && Object.keys(users).length === 1) {
             const npcUpdates = {};
-            npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true };
-            npcUpdates["users/npc_beta"] = { name: "NPC Beta", room: "game", alive: true, ready: true };
-            npcUpdates[`users/${myId}`] = { name: myStoredName, room: "game", alive: true, ready: true };
+            npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true, role: "vampire progenitor", avatar: "" };
+            npcUpdates["users/npc_beta"] = { name: "NPC Beta", room: "game", alive: true, ready: true, role: "villager", avatar: "" };
+            npcUpdates[`users/${myId}`] = { name: myStoredName, room: "game", alive: true, ready: true, avatar: myStoredAvatar };
             
             await update(ref(db), npcUpdates);
             return; 
@@ -293,12 +295,14 @@ function syncGameEngine() {
         renderInteractionGrid();
     });
 
-    // Global layout status watch parameters
     onValue(ref(db, "gameState"), snap => {
         const state = snap.val();
         if (!state) {
             if (isHost) setupDefaultGameState();
             return;
+        }
+        if (currentPhase !== state.phase) {
+            hasVotedToday = false; // Reset nomination permissions at phase changes
         }
         currentPhase = state.phase;
         updateTimerView(state.timer, state.phase);
@@ -325,7 +329,6 @@ function setupDefaultGameState() {
     sendSystemLog("The simulation begins. It is Day! Discuss freely and cast your votes to execute suspected threats.");
 }
 
-/* ROLES ALLOTMENT ENGINE */
 function allotIdentityRoles(users) {
     const entries = Object.entries(users);
     const playerCount = entries.length;
@@ -355,7 +358,7 @@ function allotIdentityRoles(users) {
             assignedRole = remainingVampireRoles.pop();
             vampireQuota--;
         } else {
-            assignedRole = villagerAndNeutralRoles.pop() || "villager";
+            assignedRole = villagerAndNeutralRoles.pop() || "hunter";
         }
         updates[`users/${id}/role`] = assignedRole;
         updates[`users/${id}/alive`] = true;
@@ -364,7 +367,6 @@ function allotIdentityRoles(users) {
     update(ref(db), updates);
 }
 
-/* TIMER MANAGEMENT & SYSTEM LOOP */
 function updateTimerView(seconds, phase) {
     const banner = document.getElementById("timerBanner");
     if (!banner) return;
@@ -404,7 +406,6 @@ function handlePhaseTimeout() {
     }
 }
 
-/* IDENTITY VIEW (BOTTOM LEFT PANEL) */
 function renderIdentityPanel() {
     const hdr = document.getElementById("bottomLeftHeader");
     const body = document.getElementById("bottomLeftBody");
@@ -427,7 +428,7 @@ function renderIdentityPanel() {
     } else {
         body.innerHTML = `
             <div style="padding:10px; font-size:12px; color:#ffb3b3; background:#241212; border-bottom:1px solid #451a1a;">
-                ATTENTION <b>${myProfile.name.toUpperCase()}</b>: You are the <b>${myProfile.role.toUpperCase()}</b>. Coordinate your metrics stealthily.
+                ATTENTION <b>${myProfile.name.toUpperCase()}</b>: You are the <b>${myProfile.role.toUpperCase()}</b>. Coordinate metrics stealthily.
             </div>
             <div class="chat-wrap" style="flex:1;">
                 <div class="chat-messages" id="vampChatMsgs" style="background:#1a0c0c;"></div>
@@ -441,12 +442,10 @@ function renderIdentityPanel() {
     }
 }
 
-/* SYSTEM CHAT CHANNEL NETWORKS */
 function setupChatChannels() {
     const mainBox = document.getElementById("mainChatMsgs");
     if (!mainBox) return;
 
-    // Remove legacy listeners by creating a structural duplicate block
     const oldMainBox = mainBox;
     const newMainBox = oldMainBox.cloneNode(false);
     oldMainBox.parentNode.replaceChild(newMainBox, oldMainBox);
@@ -457,14 +456,19 @@ function setupChatChannels() {
         const div = document.createElement("div");
         div.className = `msg ${m.type || ''}`;
         
-        const b = document.createElement("b");
-        b.textContent = m.sender + ": ";
-        const span = document.createElement("span");
-        span.textContent = m.text;
-        
         if (m.type === "sys") {
             div.textContent = m.text;
         } else {
+            const img = document.createElement("img");
+            img.className = "msg-avatar";
+            img.src = m.avatar ? `https://cdn.discordapp.com/avatars/${m.senderId}/${m.avatar}.png` : "https://cdn.discordapp.com/embed/avatars/0.png";
+            
+            const b = document.createElement("b");
+            b.textContent = m.sender + ": ";
+            const span = document.createElement("span");
+            span.textContent = m.text;
+            
+            div.appendChild(img);
             div.appendChild(b);
             div.appendChild(span);
         }
@@ -513,6 +517,8 @@ function sendMainChatMessage() {
     if (currentPhase === "night") return;
 
     push(ref(db, "mainChat"), {
+        senderId: myId,
+        avatar: myProfile.avatar || "",
         sender: myProfile.name + (myProfile.alive === false ? " (DEAD)" : ""),
         text: text,
         type: myProfile.alive === false ? "priv" : ""
@@ -530,10 +536,17 @@ function setupVampireChatListeners() {
         if(!m) return;
         const div = document.createElement("div");
         div.className = "msg vamp";
+        
+        const img = document.createElement("img");
+        img.className = "msg-avatar";
+        img.src = m.avatar ? `https://cdn.discordapp.com/avatars/${m.senderId}/${m.avatar}.png` : "https://cdn.discordapp.com/embed/avatars/0.png";
+
         const b = document.createElement("b");
         b.textContent = m.sender + ": ";
         const span = document.createElement("span");
         span.textContent = m.text;
+        
+        div.appendChild(img);
         div.appendChild(b);
         div.appendChild(span);
         vampBox.appendChild(div);
@@ -545,7 +558,7 @@ function setupVampireChatListeners() {
         if (!inp) return;
         const txt = inp.value.trim();
         if (!txt) return;
-        push(ref(db, "vampChat"), { sender: myProfile.name, text: txt });
+        push(ref(db, "vampChat"), { senderId: myId, avatar: myProfile.avatar || "", sender: myProfile.name, text: txt });
         inp.value = "";
     };
 
@@ -557,7 +570,6 @@ function sendSystemLog(txt) {
     push(ref(db, "mainChat"), { sender: "System", text: txt, type: "sys" });
 }
 
-/* ACTION HANDLING SYSTEMS */
 function renderInteractionGrid() {
     const hdr = document.getElementById("topLeftHeader");
     const body = document.getElementById("topLeftBody");
@@ -577,11 +589,14 @@ function renderInteractionGrid() {
             const div = document.createElement("div");
             div.className = "target-item";
             div.innerHTML = `<span>${p.name}</span> <button class="target-btn" id="vote-${id}">Vote</button>`;
+            if (hasVotedToday) {
+                div.querySelector(".target-btn").disabled = true;
+            }
             body.appendChild(div);
             div.querySelector(".target-btn").onclick = () => castLobbyVote(id);
         });
     } else if (currentPhase === "day_court") {
-        hdr.textContent = "Tribunal Court Is Session";
+        hdr.textContent = "Tribunal Court In Session";
         body.innerHTML = "<i>Cast your verdict inside the middle interface deck now.</i>";
     } else if (currentPhase === "night") {
         hdr.textContent = `Night Activities — ${myProfile.role.toUpperCase()}`;
@@ -611,6 +626,10 @@ function renderInteractionGrid() {
 }
 
 function castLobbyVote(targetId) {
+    if (hasVotedToday) return;
+    hasVotedToday = true;
+    renderInteractionGrid(); // Lock out interface buttons instantly
+
     set(ref(db, `votes/${myId}`), targetId);
     sendSystemLog(`${myProfile.name} cast a nomination vote against ${playersCache[targetId].name}.`);
 }
@@ -750,35 +769,147 @@ async function executePlayerDeath(id) {
     verifyWinStateConditions();
 }
 
-/* NIGHT PROCESSING LOOP */
+/* NIGHT PROCESSING RESOLUTION ENGINE */
 async function processNightActions() {
     const snap = await get(ref(db, "actions"));
     const acts = snap.val() || {};
+    
     let interactionTargets = {}; 
     let frozenPlayers = new Set();
     let invisiblePlayers = new Set();
-    let protectiveWards = {}; 
+    let protectiveWards = new Set(); 
+    let actionsQueue = [];
+    let deadQueue = new Set();
 
-    Object.entries(acts).forEach(([actorId, dataStr]) => {
-        if (!playersCache[actorId]?.alive) return;
-        interactionTargets[actorId] = dataStr;
+    // Clean out actions object setup
+    Object.entries(acts).forEach(([actorId, targetStr]) => {
+        if (playersCache[actorId]?.alive) {
+            interactionTargets[actorId] = targetStr;
+        }
     });
 
-    // Clean historical action fields to prep for daybreak sequence
-    set(ref(db, "actions"), null);
+    // P1: Confusion Vampire Redirects
+    Object.entries(playersCache).forEach(([id, p]) => {
+        if (p.role === "confusion vampire" && interactionTargets[id]) {
+            let target = interactionTargets[id];
+            if (interactionTargets[target]) {
+                let pool = Object.keys(playersCache).filter(k => playersCache[k].alive && k !== target);
+                if (pool.length > 0) {
+                    interactionTargets[target] = pool[Math.floor(Math.random() * pool.length)];
+                }
+            }
+        }
+    });
 
-    // Roll game state back into daytime mode safely
+    // P2: Ice Cream Maker Freezes
+    Object.entries(playersCache).forEach(([id, p]) => {
+        if (p.role === "ice cream maker" && interactionTargets[id]) {
+            let target = interactionTargets[id];
+            frozenPlayers.add(target);
+            delete interactionTargets[target]; // Strip target action vector
+        }
+    });
+
+    // P3: Witch Potions Draw
+    Object.entries(playersCache).forEach(([id, p]) => {
+        if (p.role === "witch" && interactionTargets[id]) {
+            let target = interactionTargets[id];
+            if (witchPotionThisNight === "Invisibility Potion") {
+                invisiblePlayers.add(target);
+            } else if (witchPotionThisNight === "Poison Potion") {
+                deadQueue.add(target);
+                sendSystemLog(`A mystical toxic vapor claimed a resident during the dark hours.`);
+            }
+        }
+    });
+
+    // Filter hidden target visits out
+    Object.keys(interactionTargets).forEach(actorId => {
+        if (playersCache[actorId].role !== "witch" && invisiblePlayers.has(interactionTargets[actorId])) {
+            delete interactionTargets[actorId];
+        }
+    });
+
+    // P4: Holy Knight Wards
+    Object.entries(playersCache).forEach(([id, p]) => {
+        if (p.role === "holy knight" && interactionTargets[id]) {
+            protectiveWards.add(interactionTargets[id]);
+        }
+    });
+
+    // P5-P7: Vampire Progenitor & Hunter Executions
+    Object.entries(playersCache).forEach(([id, p]) => {
+        let choice = interactionTargets[id];
+        if (!choice) return;
+
+        if (p.role === "vampire progenitor") {
+            if (protectiveWards.has(choice)) {
+                sendSystemLog(`The Holy Knight successfully repelled a lethal nocturnal assault!`);
+            } else {
+                deadQueue.add(choice);
+            }
+        }
+
+        if (p.role === "hunter") {
+            deadQueue.add(choice);
+            // Check crossfire alignment metrics
+            let targetedUnit = playersCache[choice];
+            if (targetedUnit && ROLE_DATA[targetedUnit.role]?.side === "villager") {
+                deadQueue.add(id); // Suicide trigger flag
+                sendSystemLog(`Overcome with immediate remorse for striking an innocent villager, the Hunter commits suicide.`);
+            }
+        }
+    });
+
+    // Process all night casualties safely
+    for (let victimId of deadQueue) {
+        if (playersCache[victimId]?.alive) {
+            await update(ref(db, `users/${victimId}`), { alive: false });
+            sendSystemLog(`💀 ${playersCache[victimId].name} was found dead when dawn broke.`);
+            
+            // Render testament wills
+            const willSnap = await get(ref(db, `wills/${victimId}`));
+            const willData = willSnap.val();
+            if (willData && willData.text) {
+                sendSystemLog(`[LAST WILL OF ${willData.name.toUpperCase()}]: "${willData.text}"`);
+            }
+        }
+    }
+
+    if (deadQueue.size === 0) {
+        sendSystemLog("Miraculously, everyone survived through the perilous night.");
+    }
+
+    // Wipe global database tracking structures clear for the next loop
+    await set(ref(db, "actions"), null);
+    witchPotionThisNight = "";
+
+    // Kick back to day discussion safely
     update(ref(db, "gameState"), {
         phase: "day_voting",
         timer: 100,
         court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} }
     });
-    sendSystemLog("Dawn breaks over the simulation arena. Review night feedback notes and begin daily trials.");
+    
+    verifyWinStateConditions();
 }
 
 function verifyWinStateConditions() {
-    // Placeholder function to avoid runtime script failures
-    console.log("Evaluating factual ledger rules metrics...");
+    let aliveVamps = 0;
+    let aliveTown = 0;
+
+    Object.values(playersCache).forEach(p => {
+        if (!p.alive) return;
+        const side = ROLE_DATA[p.role]?.side;
+        if (side === "vampire") aliveVamps++;
+        if (side === "villager") aliveTown++;
+    });
+
+    if (aliveVamps === 0) {
+        update(ref(db, "gameState"), { phase: "game_over", winnerMessage: "VILLAGERS TRIUMPH! ALL VAMPIRES EXTERMINATED!" });
+    } else if (aliveVamps >= aliveTown) {
+        update(ref(db, "gameState"), { phase: "game_over", winnerMessage: "VAMPIRES WIN! THE VILLAGE HAS BEEN OVERRUN!" });
+    }
 }
 
 function displayGameOverOverlay(msg) {
