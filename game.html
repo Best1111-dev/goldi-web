@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Goldi Web - Match Running</title>
+    </head>
+<body>
+
+<div class="container">
+    <div class="panel top-left">
+        <h3 style="padding:10px;margin:0;">Alive Players</h3>
+        <div id="gamePlayers"></div>
+    </div>
+
+    <div class="panel bottom-left">
+        <div class="row">
+            <button id="actionBtn" class="small-btn">Take Turn</button>
+        </div>
+        <div id="gameLog"></div>
+    </div>
+
+    <div class="panel middle" id="gameCanvasPanel">
+        <div style="padding:10px;">
+            <h3>Game Board Node</h3>
+            </div>
+    </div>
+
+    <div class="panel top-right">
+        <h3 style="padding:10px;margin:0;">Match Stats</h3>
+    </div>
+    
+    <div class="panel bottom-right"></div>
+</div>
+
+<script type="module">
+    // Your game loop logic, pulling state from db node "games/match_id"
+</script>
+</body>
+</html>
