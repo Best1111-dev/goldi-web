@@ -239,6 +239,18 @@ async function loadUser() {
         initChat();
         listenUsers();
         listenMessages();
+        // Put this inside loadUser() after listenMessages();
+        listenForGameStart();
+        
+        function listenForGameStart() {
+            const userRoomRef = ref(db, `users/${currentUser.id}/room`);
+            onValue(userRoomRef, (snap) => {
+                if (snap.val() === "game") {
+                    // Send them to the game page!
+                    window.location.href = "game.html";
+                }
+            });
+        }
 
     } catch (err) {
         console.error("Login verification stalled:", err);
