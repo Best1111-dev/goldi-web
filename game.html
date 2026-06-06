@@ -69,6 +69,7 @@
             margin-bottom: 6px;
             border-radius: 4px;
             border: 1px solid #2a2a2a;
+            gap: 5px;
         }
         .target-btn {
             background: #c99700;
@@ -81,6 +82,17 @@
         }
         .target-btn:hover { background: #fff; }
         .target-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+        
+        .judge-btn {
+            background: #bd0000;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+        .judge-btn:hover { background: #ff4d4d; }
 
         /* CHATS INTERFACE VISUAL STYLE */
         .chat-wrap { display: flex; flex-direction: column; height: 100%; }
@@ -168,17 +180,37 @@
 
         /* OVERLAYS */
         .game-over-box {
-            background: rgba(0,0,0,0.96);
+            background: rgba(0,0,0,0.98);
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
             display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
+            justify-content: flex-start; align-items: center;
             z-index: 9999;
             text-align: center;
+            overflow-y: auto;
+            padding: 40px 20px;
+            box-sizing: border-box;
         }
-        .game-over-title { font-size: 44px; color: gold; font-weight: bold; margin-bottom: 25px; padding: 0 20px; }
-        .lobby-return-btn { background: #d4af37; color: black; border: none; padding: 16px 36px; font-size: 20px; font-weight: bold; cursor: pointer; border-radius: 6px; text-transform: uppercase; }
+        .game-over-title { font-size: 40px; color: gold; font-weight: bold; margin-bottom: 15px; }
+        .lobby-return-btn { background: #d4af37; color: black; border: none; padding: 14px 32px; font-size: 18px; font-weight: bold; cursor: pointer; border-radius: 6px; text-transform: uppercase; margin-bottom: 30px; }
         .lobby-return-btn:hover { background: #fff; box-shadow: 0 0 15px rgba(255,255,255,0.4); }
+        
+        .manifest-container {
+            width: 100%;
+            max-width: 800px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: left;
+            margin-top: 10px;
+        }
+        .manifest-section { margin-bottom: 20px; }
+        .manifest-section h4 { margin: 0 0 10px 0; font-size: 18px; border-bottom: 1px solid #44; padding-bottom: 4px; }
+        .manifest-section.vills h4 { color: #5dade2; }
+        .manifest-section.vamps h4 { color: #ec7063; }
+        .manifest-section.neuts h4 { color: #f4d03f; }
+        .manifest-player { padding: 4px 0; font-size: 15px; font-family: monospace; }
         
         .role-badge {
             display: inline-flex;
@@ -193,6 +225,7 @@
 <div id="gameOverScreen" class="game-over-box" style="display:none;">
     <div class="game-over-title" id="victoryBanner">VICTORY ACHIEVED!</div>
     <button class="lobby-return-btn" id="returnToLobbyBtn">Return to Lobby & Wipe Match</button>
+    <div class="manifest-container" id="victoryManifest"></div>
 </div>
 
 <div class="container">
@@ -262,18 +295,20 @@ let currentPhase = "";
 let isHost = false;
 let witchPotionThisNight = "";
 let hasVotedToday = false;
-let resetInProgress = false; // System lock guard parameter
+let resetInProgress = false;
 
 const ROLE_DATA = {
     "confusion vampire": { p: 1, side: "vampire", icon: "🌀", desc: "Choose 1 target at night. Switch the target of their action to another random player." },
     "ice cream maker": { p: 2, side: "villager", icon: "🍦", desc: "Freeze 1 target at night to prevent them from taking action. Must rest 1 night after use." },
     "troll": { p: 3, side: "neutral", icon: "🧌", desc: "Choose 1 player at night. If they visited someone, they die. If they stayed home, they discover who you are." },
     "witch": { p: 4, side: "villager", icon: "🧙‍♀️", desc: "Draws a random potion at dusk (Useless, Poison, Invisibility). Poison kills target; Invisibility blocks all visits to target." },
-    "doctor": { p: 4.5, side: "villager", icon: "🩺", desc: "Visit 1 player per night. If that player is attacked on the same night, they are saved." },
+    "doctor": { p: 4.5, side: "villager", icon: "🩺", desc: "Visit 1 player per night. If that player is attacked on the same night, they are saved. Cannot choose the same person on consecutive nights." },
+    "spirit artist": { p: 4.6, side: "villager", icon: "🎨", desc: "Choose 1 person each night to make invisible. Cannot choose the same person on consecutive nights." },
     "holy knight": { p: 5, side: "villager", icon: "🛡️", desc: "Guard 1 target. If Vampire Progenitor visits, both die. If any other vampire visits, their action is canceled." },
     "vampire progenitor": { p: 6, side: "vampire", icon: "🩸", desc: "Select 1 target to kill each night." },
     "hunter": { p: 7, side: "villager", icon: "🏹", desc: "Choose 1 player to kill each night. If you kill a fellow villager, you commit suicide out of guilt." },
     "vampire lawyer": { p: 8, side: "vampire", icon: "⚖️", desc: "Day ability: If a court trial is active, vote innocent to end the trial instantly and force Nightfall (Once per game)." },
+    "judge": { p: 8.2, side: "villager", icon: "🔨", desc: "Day ability: Click the 'Judge' button next to a player to execute them instantly and force Night phase. If you execute a villager, you are killed by the executioner." },
     "pokemon trainer": { p: 8.5, side: "neutral", icon: "🧢", desc: "Visit 1 player per night. If Progenitor, you die. Otherwise catch a Pokémon. At 5 catches, you become Champion." },
     "pokemon champion": { p: 8.6, side: "villager", icon: "🏆", desc: "Send 1 pokemon out each night to kill 1 player." },
     "detective": { p: 9, side: "villager", icon: "🔍", desc: "Investigate 1 target at night to reveal whether they are a Vampire." },
@@ -282,7 +317,10 @@ const ROLE_DATA = {
     "seer vampire": { p: 12, side: "vampire", icon: "👁️", desc: "Peer into a player's mind at night to reveal their exact identity card directly." },
     "spy": { p: 13, side: "villager", icon: "👣", desc: "Track 1 player at night to identify who they went out to visit." },
     "stalker": { p: 14, side: "villager", icon: "📹", desc: "Watch 1 player at night to catch everyone who came to visit them." },
-    "jester": { p: 15, side: "neutral", icon: "🃏", desc: "Trick the town into executing you during the Day Court trial. If you are lynched, you win immediately." }
+    "jester": { p: 15, side: "neutral", icon: "🃏", desc: "Trick the town into executing you during the Day Court trial. If you are lynched, you win immediately." },
+    "dragoon": { p: 16, side: "neutral", icon: "🐉", desc: "Pick 1 player per night to feed to the dragon (kills target). If nominated during the day, you die instantly. Goal: Feed 2 vamps and 2 vills to dragon. Only appears in 10+ player matches." },
+    "rando": { p: 17, side: "neutral", icon: "🎲", desc: "If the Vampire Progenitor attacks you at night, the Progenitor dies instead, and you transform into the new Vampire Progenitor." },
+    "inflator": { p: 18, side: "neutral", icon: "🎈", desc: "Target 1 player each night to permanently append 1 extra voting credit weight to them. Goal: Let someone get nominated by a vote count exactly equal to the match's initial player count." }
 };
 
 bootstrapGame();
@@ -319,13 +357,22 @@ function syncGameEngine() {
         const sortedIds = Object.keys(users).sort();
         isHost = (sortedIds[0] === myId);
 
-        // --- SINGLE PLAYER NPC SEED STAGING ---
+        // --- EXTENDED PLAYER NPC SEED STAGING ---
         if (isHost && Object.keys(users).length === 1 && currentPhase !== "game_over") {
             const npcUpdates = {};
-            npcUpdates["users/npc_alpha"] = { name: "NPC Alpha", room: "game", alive: true, ready: true, role: "vampire progenitor", avatar: "" };
-            npcUpdates["users/npc_beta"] = { name: "NPC Beta", room: "game", alive: true, ready: true, role: "jester", avatar: "" };
-            npcUpdates["users/npc_gamma"] = { name: "NPC Gamma", room: "game", alive: true, ready: true, role: "doctor", avatar: "" };
-            npcUpdates["users/npc_delta"] = { name: "NPC Delta", room: "game", alive: true, ready: true, role: "pokemon trainer", avatar: "" };
+            // Initializing 10 total simulated players to allow testing of large-scale configurations (e.g. Dragoon)
+            const mockRoles = ["vampire progenitor", "jester", "doctor", "pokemon trainer", "judge", "spirit artist", "dragoon", "rando", "inflator"];
+            for (let i = 1; i <= 9; i++) {
+                let suffix = i === 1 ? "alpha" : i === 2 ? "beta" : i === 3 ? "gamma" : i === 4 ? "delta" : `bot_${i}`;
+                npcUpdates[`users/npc_${suffix}`] = { 
+                    name: `NPC ${suffix.toUpperCase().replace("_", " ")}`, 
+                    room: "game", 
+                    alive: true, 
+                    ready: true, 
+                    role: mockRoles[i-1] || "hunter", 
+                    avatar: "" 
+                };
+            }
             npcUpdates[`users/${myId}`] = { name: myStoredName, room: "game", alive: true, ready: true, avatar: myStoredAvatar };
             
             await update(ref(db), npcUpdates);
@@ -370,12 +417,16 @@ function syncGameEngine() {
     setupLobbyReturnRoute();
 }
 
-function setupDefaultGameState() {
+async function setupDefaultGameState() {
+    const userSnap = await get(ref(db, "users"));
+    const totalCount = Object.keys(userSnap.val() || {}).length;
+    
     set(ref(db, "gameState"), {
         phase: "day_voting",
         timer: 100,
         court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} },
-        winnerMessage: ""
+        winnerMessage: "",
+        initialPlayerCount: totalCount
     });
     sendSystemLog("The simulation begins. It is Day! Discuss freely and cast your votes to execute suspected threats.");
 }
@@ -388,9 +439,15 @@ function allotIdentityRoles(users) {
     let chunks = Math.floor(playerCount / 5);
     let remainder = playerCount % 5;
 
-    let vampsPool = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side === "vampire" && r !== "vampire progenitor");
-    let neutsPool = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side === "neutral");
-    let villsPool = Object.keys(ROLE_DATA).filter(r => ROLE_DATA[r].side === "villager" && r !== "detective");
+    // Filter roles, omitting dragoon if metric threshold is less than 10
+    let eligibleRoles = { ...ROLE_DATA };
+    if (playerCount < 10) {
+        delete eligibleRoles["dragoon"];
+    }
+
+    let vampsPool = Object.keys(eligibleRoles).filter(r => eligibleRoles[r].side === "vampire" && r !== "vampire progenitor");
+    let neutsPool = Object.keys(eligibleRoles).filter(r => eligibleRoles[r].side === "neutral");
+    let villsPool = Object.keys(eligibleRoles).filter(r => eligibleRoles[r].side === "villager" && r !== "detective");
 
     vampsPool.sort(() => Math.random() - 0.5);
     neutsPool.sort(() => Math.random() - 0.5);
@@ -446,6 +503,7 @@ function allotIdentityRoles(users) {
     Object.keys(users).forEach(id => {
         updates[`users/${id}/role`] = finalUniqueRoles[index] || "hunter";
         updates[`users/${id}/alive`] = true;
+        updates[`users/${id}/voteBonusCount`] = 0; // Tracking field for Inflator bonus credits
         index++;
     });
 
@@ -506,13 +564,17 @@ function renderIdentityPanel() {
     hdr.textContent = `IDENTITY MONITOR ${isDead ? '(ELIMINATED)' : ''}`;
 
     if (roleInfo.side === "villager" || roleInfo.side === "neutral") {
+        let trackerText = "";
+        if (myProfile.role === "dragoon") {
+            trackerText = `<br><br><span style="color:#f39c12;">🐉 Dragon Progress: Eaten Villagers (${myProfile.fedVills || 0}/2), Eaten Vampires (${myProfile.fedVamps || 0}/2)</span>`;
+        }
         body.innerHTML = `
             <div style="padding:15px; font-size:14px; line-height:1.5; color:#a0e6ff; background:#141414; flex:1;">
                 <div class="role-badge" style="font-size: 18px; margin-bottom: 8px;">
                     <span>${roleInfo.icon}</span> <b>${myProfile.role.toUpperCase()}</b>
                 </div>
                 <b>Faction Alignment:</b> ${roleInfo.side.toUpperCase()}<br><br>
-                <b>Manual Capability:</b> ${roleInfo.desc}
+                <b>Manual Capability:</b> ${roleInfo.desc}${trackerText}
             </div>
         `;
     } else {
@@ -666,7 +728,7 @@ function setupVampireChatListeners() {
         if (!inp) return;
         const txt = inp.value.trim();
         if (!txt || resetInProgress) return;
-        push(ref(db, "vampChat"), { senderId: myId, avatar: myProfile.avatar || "", sender: myProfile.name, text: txt });
+        push(ref(db, "vampChat"), { senderId: myId, avatar: myProfile.avatar || "", sender: p.name, text: txt });
         inp.value = "";
     };
 
@@ -697,12 +759,24 @@ function renderInteractionGrid() {
             if (!p.alive) return;
             const div = document.createElement("div");
             div.className = "target-item";
-            div.innerHTML = `<span>${p.name}</span> <button class="target-btn" id="vote-${id}">Vote</button>`;
+            
+            let btnRowHTML = `<button class="target-btn" id="vote-${id}">Vote</button>`;
+            if (myProfile.role === "judge" && id !== myId) {
+                btnRowHTML += ` <button class="judge-btn" id="judge-${id}">Judge</button>`;
+            }
+            
+            div.innerHTML = `<span>${p.name}</span> <div>${btnRowHTML}</div>`;
             if (hasVotedToday) {
-                div.querySelector(".target-btn").disabled = true;
+                const vb = div.querySelector(".target-btn");
+                if (vb) vb.disabled = true;
             }
             body.appendChild(div);
-            div.querySelector(".target-btn").onclick = () => castLobbyVote(id);
+            
+            const vBtn = div.querySelector(".target-btn");
+            if (vBtn) vBtn.onclick = () => castLobbyVote(id);
+            
+            const jBtn = div.querySelector(".judge-btn");
+            if (jBtn) jBtn.onclick = () => triggerInstantJudgeExecution(id);
         });
     } else if (currentPhase === "day_court") {
         hdr.textContent = "Tribunal Court In Session";
@@ -734,7 +808,7 @@ function renderInteractionGrid() {
     }
 }
 
-function castLobbyVote(targetId) {
+async function castLobbyVote(targetId) {
     if (hasVotedToday || resetInProgress) return;
     hasVotedToday = true;
     renderInteractionGrid(); 
@@ -743,8 +817,51 @@ function castLobbyVote(targetId) {
     sendSystemLog(`${myProfile.name} cast a nomination vote against ${playersCache[targetId].name}.`);
 }
 
+async function triggerInstantJudgeExecution(targetId) {
+    if (resetInProgress || currentPhase !== "day_voting") return;
+    const targetedUser = playersCache[targetId];
+    if (!targetedUser || !targetedUser.alive) return;
+
+    sendSystemLog(`🔨 THE JUDGE HAS INTERVENED! ${myProfile.name.toUpperCase()} slams the gavel down on ${targetedUser.name.toUpperCase()}, executing them instantly!`);
+    
+    // Check for collateral damage
+    const targetRoleSide = ROLE_DATA[targetedUser.role]?.side;
+    let judgeDies = false;
+    if (targetRoleSide === "villager" || targetedUser.role === "pokemon champion") {
+        judgeDies = true;
+    }
+
+    await executePlayerDeath(targetId);
+
+    if (judgeDies && myProfile.alive) {
+        sendSystemLog(`💀 EXECUTIONER RETRIBUTION: The Judge executed a fellow villager! The Executioner emerges from the shadows and kills Judge ${myProfile.name.toUpperCase()}.`);
+        await executePlayerDeath(myId);
+    }
+
+    // Force forward into Night phase immediately
+    if (currentPhase !== "game_over") {
+        update(ref(db, "gameState"), {
+            phase: "night",
+            timer: 40,
+            court: { active: false, targetId: "", targetName: "", guilty: 0, innocent: 0, voters: {} }
+        });
+        set(ref(db, "votes"), null);
+    }
+}
+
 function submitNightAction(targetId) {
     if (resetInProgress) return;
+
+    // Consecutive night choice validation parameters
+    if (myProfile.role === "doctor" || myProfile.role === "spirit artist") {
+        const lastChoice = localStorage.getItem(`lastTarget_${myProfile.role}`);
+        if (lastChoice === targetId) {
+            alert("Error: You cannot choose the exact same target on consecutive nights!");
+            return;
+        }
+        localStorage.setItem(`lastTarget_${myProfile.role}`, targetId);
+    }
+
     if (myProfile.role === "investigator" || myProfile.role === "psychic") {
         if (!window.firstTarget) {
             window.firstTarget = targetId;
@@ -807,10 +924,15 @@ async function evaluateVotingTally() {
     const snap = await get(ref(db, "votes"));
     const votes = snap.val() || {};
     const tallies = {};
+    
     let activePlayersCount = Object.values(playersCache).filter(p => p.alive).length;
     let threshold = Math.ceil(activePlayersCount * 0.5);
 
-    Object.values(votes).forEach(tId => { tallies[tId] = (tallies[tId] || 0) + 1; });
+    // Compute tallies compiling Inflator vote bonuses
+    Object.entries(votes).forEach(([voterId, tId]) => {
+        const bonusWeight = playersCache[voterId]?.voteBonusCount || 0;
+        tallies[tId] = (tallies[tId] || 0) + 1 + bonusWeight;
+    });
 
     let courtTargetId = null;
     Object.entries(tallies).forEach(([tId, count]) => {
@@ -818,19 +940,29 @@ async function evaluateVotingTally() {
     });
 
     if (courtTargetId) {
-        sendSystemLog(`The village reached a consensus! ${playersCache[courtTargetId].name} is sent to stand trial in court.`);
-        update(ref(db, "gameState"), {
-            phase: "day_court",
-            timer: 100,
-            court: {
-                active: true,
-                targetId: courtTargetId,
-                targetName: playersCache[courtTargetId].name,
-                guilty: 0,
-                innocent: 0,
-                voters: {}
+        // Dragoon Immediate Death Guard Rail Clause
+        if (playersCache[courtTargetId]?.role === "dragoon") {
+            sendSystemLog(`🔥 DRAGOON NOMINATED! ${playersCache[courtTargetId].name.toUpperCase()} was nominated by the town during the day, triggering instant immolation!`);
+            await executePlayerDeath(courtTargetId);
+            
+            if (currentPhase !== "game_over") {
+                update(ref(db, "gameState"), { phase: "night", timer: 40, court: { active: false } });
             }
-        });
+        } else {
+            sendSystemLog(`The village reached a consensus! ${playersCache[courtTargetId].name} is sent to stand trial in court.`);
+            update(ref(db, "gameState"), {
+                phase: "day_court",
+                timer: 100,
+                court: {
+                    active: true,
+                    targetId: courtTargetId,
+                    targetName: playersCache[courtTargetId].name,
+                    guilty: 0,
+                    innocent: 0,
+                    voters: {}
+                }
+            });
+        }
     } else {
         sendSystemLog("The town failed to reach consensus. Night descends...");
         update(ref(db, "gameState"), { phase: "night", timer: 40, court: { active: false } });
@@ -914,6 +1046,9 @@ async function processNightActions() {
     const snap = await get(ref(db, "actions"));
     const acts = snap.val() || {};
     
+    const gameGlobalSnap = await get(ref(db, "gameState"));
+    const initialMatchCount = gameGlobalSnap.val()?.initialPlayerCount || Object.keys(playersCache).length;
+
     let interactionTargets = {}; 
     let frozenPlayers = new Set();
     let invisiblePlayers = new Set();
@@ -927,6 +1062,7 @@ async function processNightActions() {
         }
     });
 
+    // 1. Confusion Vampire Redirect Loop
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "confusion vampire" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -939,6 +1075,7 @@ async function processNightActions() {
         }
     });
 
+    // 2. Ice Cream Maker Freeze Loop
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "ice cream maker" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -947,12 +1084,21 @@ async function processNightActions() {
         }
     });
 
+    // 3. Spirit Artist Invisibility Setup
+    Object.entries(playersCache).forEach(([id, p]) => {
+        if (p.role === "spirit artist" && interactionTargets[id]) {
+            invisiblePlayers.add(interactionTargets[id]);
+        }
+    });
+
+    // 4. Doctor Protection Injection
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "doctor" && interactionTargets[id]) {
             doctorSaves.add(interactionTargets[id]);
         }
     });
 
+    // 5. Witch Potion Application Loop
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "witch" && interactionTargets[id]) {
             let target = interactionTargets[id];
@@ -968,21 +1114,63 @@ async function processNightActions() {
         }
     });
 
+    // Clean actions hitting invisible vectors
     Object.keys(interactionTargets).forEach(actorId => {
-        if (playersCache[actorId].role !== "witch" && invisiblePlayers.has(interactionTargets[actorId])) {
+        if (playersCache[actorId].role !== "witch" && playersCache[actorId].role !== "spirit artist" && invisiblePlayers.has(interactionTargets[actorId])) {
             delete interactionTargets[actorId];
         }
     });
 
+    // 6. Holy Knight Ward
     Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "holy knight" && interactionTargets[id]) {
             protectiveWards.add(interactionTargets[id]);
         }
     });
 
-    Object.entries(playersCache).forEach(([id, p]) => {
+    // 7. Core Interactive Action Resolution
+    for (const [id, p] of Object.entries(playersCache)) {
         let choice = interactionTargets[id];
-        if (!choice) return;
+        if (!choice) continue;
+
+        // Inflator Action Execution
+        if (p.role === "inflator") {
+            let currentBonus = playersCache[choice]?.voteBonusCount || 0;
+            let finalBonus = currentBonus + 1;
+            await update(ref(db, `users/${choice}`), { voteBonusCount: finalBonus });
+            sendSystemLog(`🎈 AN INFLATOR EXPANDS A BALLOON! A hidden vote weight has been appended permanently to a resident.`);
+            
+            // Inflator Instant Win Calculation Metric Check
+            if (finalBonus === initialMatchCount) {
+                update(ref(db, "gameState"), { phase: "game_over", winnerMessage: `🎈 INFLATOR VICTORY! ${p.name.toUpperCase()} INFLATED A RESIDENT'S WEIGHT TO MATCH INITIAL MATCH COUNT (${initialMatchCount}) EXACTLY!` });
+                return;
+            }
+        }
+
+        // Dragoon Devourment Action
+        if (p.role === "dragoon") {
+            deadQueue.add(choice);
+            sendSystemLog(`🐉 THE DRAGON FEEDS: A resident was fed to the dragon tonight and incinerated.`);
+            
+            let preyRole = playersCache[choice]?.role;
+            let preySide = ROLE_DATA[preyRole]?.side;
+            
+            if (preySide === "villager" || preyRole === "pokemon champion") {
+                let cur = p.fedVills || 0;
+                await update(ref(db, `users/${id}`), { fedVills: cur + 1 });
+                p.fedVills = cur + 1;
+            } else if (preySide === "vampire") {
+                let cur = p.fedVamps || 0;
+                await update(ref(db, `users/${id}`), { fedVamps: cur + 1 });
+                p.fedVamps = cur + 1;
+            }
+
+            // Dragoon Win Condition check
+            if ((p.fedVills || 0) >= 2 && (p.fedVamps || 0) >= 2) {
+                update(ref(db, "gameState"), { phase: "game_over", winnerMessage: `🐉 DRAGOON VICTORY! ${p.name.toUpperCase()} SUCCESSFULLY FED 2 VILLAGERS AND 2 VAMPIRES TO THE DRAGON!` });
+                return;
+            }
+        }
 
         if (p.role === "pokemon trainer") {
             let targetUnit = playersCache[choice];
@@ -990,15 +1178,6 @@ async function processNightActions() {
                 deadQueue.add(id);
                 sendSystemLog(`🧢 A Pokémon Trainer wandered into the Progenitor's lair and was consumed.`);
             } else if (targetUnit) {
-                const rarities = ["common", "common", "uncommon", "rare", "mythical", "legendary"];
-                let rolled = rarities[Math.floor(Math.random() * rarities.length)];
-                
-                if (rolled === "legendary") {
-                    sendSystemLog(`✨ [POKEMON TRAINER]: WOW! I caught a LEGENDARY Pokémon inside ${targetUnit.name}'s house!`);
-                } else if (rolled === "mythical" || rolled === "uncommon") { 
-                    sendSystemLog(`💫 [POKEMON TRAINER]: Wild alert! Caught a rare entity type inside a ${targetUnit.role.toUpperCase()}'s house!`);
-                }
-
                 p.pokeCount = (p.pokeCount || 0) + 1;
                 if (p.pokeCount >= 5) {
                     update(ref(db, `users/${id}`), { role: "pokemon champion" });
@@ -1012,28 +1191,32 @@ async function processNightActions() {
         }
 
         if (p.role === "vampire progenitor") {
-            if (protectiveWards.has(choice)) {
-                sendSystemLog("The Holy Knight successfully repelled a lethal nocturnal assault!");
-            } else if (doctorSaves.has(choice)) {
-                sendSystemLog("The Doctor successfully treated and saved the target of a brutal attack!");
+            let targetUnit = playersCache[choice];
+            // Rando Neutral Redirect Trap Protection Clause
+            if (targetUnit && targetUnit.role === "rando") {
+                deadQueue.add(id); // Progenitor Dies
+                await update(ref(db, `users/${choice}`), { role: "vampire progenitor" }); // Rando inherits mantle
+                sendSystemLog(`🎲 RANDO TRAP TRIGGERED! The Vampire Progenitor attempted to bite the rando target, killing the Progenitor instantly! The rando transforms into the new Progenitor.`);
             } else {
-                deadQueue.add(choice);
+                if (protectiveWards.has(choice)) {
+                    sendSystemLog("The Holy Knight successfully repelled a lethal nocturnal assault!");
+                } else if (doctorSaves.has(choice)) {
+                    sendSystemLog("The Doctor successfully treated and saved the target of a brutal attack!");
+                } else {
+                    deadQueue.add(choice);
+                }
             }
         }
 
         if (p.role === "hunter") {
-            if (doctorSaves.has(choice)) {
-                sendSystemLog("The Doctor patched up a bullet wound tonight!");
-            } else {
-                deadQueue.add(choice);
-            }
+            if (!doctorSaves.has(choice)) deadQueue.add(choice);
             let targetedUnit = playersCache[choice];
             if (targetedUnit && ROLE_DATA[targetedUnit.role]?.side === "villager") {
                 deadQueue.add(id); 
                 sendSystemLog(`Overcome with immediate remorse for striking an innocent villager, the Hunter commits suicide.`);
             }
         }
-    });
+    }
 
     let progenitorDiedThisNight = false;
 
@@ -1074,7 +1257,6 @@ async function processNightActions() {
 }
 
 function verifyWinStateConditions() {
-    // CRITICAL GUARD RAIL: Do not compute if wiping a match or if data is missing
     if (currentPhase === "game_over" || resetInProgress) return;
     if (!playersCache || Object.keys(playersCache).length <= 1) return;
 
@@ -1098,22 +1280,49 @@ function verifyWinStateConditions() {
 function displayGameOverOverlay(msg) {
     const scr = document.getElementById("gameOverScreen");
     const banner = document.getElementById("victoryBanner");
-    if (scr && banner) {
+    const manifestEl = document.getElementById("victoryManifest");
+    
+    if (scr && banner && manifestEl) {
         banner.textContent = msg;
+        
+        let villRows = "";
+        let vampRows = "";
+        let neutRows = "";
+        
+        Object.values(playersCache).forEach(p => {
+            let side = ROLE_DATA[p.role]?.side || "neutral";
+            if (p.role === "pokemon champion") side = "villager";
+            
+            let line = `<div class="manifest-player">• <b>${p.name}</b> — Role: <span style="text-transform:uppercase;">${p.role}</span> (${p.alive ? 'ALIVE' : 'ELIMINATED'})</div>`;
+            
+            if (side === "villager") villRows += line;
+            else if (side === "vampire") vampRows += line;
+            else neutRows += line;
+        });
+        
+        manifestEl.innerHTML = `
+            <h3 style="color:#fff; margin-top:0; border-bottom:1px solid #333; padding-bottom:10px;">FINAL SIMULATION ARCHIVE</h3>
+            <div class="manifest-section vills"><h4>VILLAGER ALIGNMENT MATRIX</h4>${villRows || '<i>No registration data</i>'}</div>
+            <div class="manifest-section vamps"><h4>VAMPIRE COVEN ALIGNMENT MATRIX</h4>${vampRows || '<i>No registration data</i>'}</div>
+            <div class="manifest-section neuts"><h4>NEUTRAL ALIGNMENT MATRIX</h4>${neutRows || '<i>No registration data</i>'}</div>
+        `;
+        
         scr.style.display = "flex";
     }
 }
 
-/* TOTAL IMMUTABLE PURGE CLEANUP ENGINE ROUTINE */
+/* TOTAL DESTRUCTIVE PURGE ENGINE ROUTINE */
 function setupLobbyReturnRoute() {
     const btn = document.getElementById("returnToLobbyBtn");
     if (btn) {
         btn.onclick = async () => {
-            // Activate safety switch lock
             resetInProgress = true;
             document.getElementById("gameOverScreen").style.display = "none";
             
-            // Hard delete all global match paths sequentially
+            // Wipe runtime variables out of memory
+            localStorage.removeItem("lastTarget_doctor");
+            localStorage.removeItem("lastTarget_spirit artist");
+            
             await remove(ref(db, "gameState"));
             await remove(ref(db, "actions"));
             await remove(ref(db, "votes"));
@@ -1121,32 +1330,29 @@ function setupLobbyReturnRoute() {
             await remove(ref(db, "vampChat"));
             await remove(ref(db, "wills"));
             
-            // Explicitly pull and destroy ALL user configurations containing NPC markers
             const userSnap = await get(ref(db, "users"));
             const currentUsers = userSnap.val() || {};
             const cleanUserMap = {};
             
             Object.entries(currentUsers).forEach(([id, p]) => {
                 if (id.startsWith("npc_") || id.includes("npc")) {
-                    // Vaporize NPC entries out of the database array entirely
                     cleanUserMap[`users/${id}`] = null;
                 } else {
-                    // Reset human client nodes cleanly back to room parameters
                     cleanUserMap[`users/${id}`] = {
                         name: p.name || "Player",
                         room: "lobby",
                         alive: true,
                         ready: false,
                         avatar: p.avatar || "",
-                        role: null
+                        role: null,
+                        voteBonusCount: null,
+                        fedVills: null,
+                        fedVamps: null
                     };
                 }
             });
             
-            // Commit deep user sync update
             await update(ref(db), cleanUserMap);
-            
-            // Route client gracefully back to screen context selection window
             window.location.href = "index.html";
         };
     }
