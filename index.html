@@ -193,18 +193,22 @@ loadUser();
 /* LOAD USER */
 async function loadUser() {
 
-    const hash = new URLSearchParams(location.hash.substring(1));
-    const token = hash.get("access_token");
+    // 1. ALWAYS read hash first
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const tokenFromHash = hashParams.get("access_token");
 
-    if (token) {
-        localStorage.setItem("token", token);
+    // 2. If token exists in URL → store it and FORCE reload cleanly
+    if (tokenFromHash) {
+        localStorage.setItem("token", tokenFromHash);
 
-        // IMPORTANT: clear URL + force fresh state
-        history.replaceState({}, "", location.pathname);
+        // remove hash and reload once (IMPORTANT FIX)
+        window.location.hash = "";
+        window.location.reload();
+        return;
     }
 
+    // 3. use stored token
     const saved = localStorage.getItem("token");
-
     if (!saved) return;
 
     try {
@@ -215,7 +219,7 @@ async function loadUser() {
             }
         });
 
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Invalid token");
 
         currentUser = await res.json();
 
@@ -232,8 +236,8 @@ async function loadUser() {
 
     } catch (err) {
 
+        console.log("Token invalid, clearing...");
         localStorage.removeItem("token");
-        console.error("Login failed", err);
     }
 }
 /* USERS LIST */
