@@ -1,409 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Goldi Web</title>
-
+    <title>Goldi Web - Entrance</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
         body {
             margin: 0;
-            font-family: Arial;
+            padding: 0;
+            font-family: Arial, sans-serif;
             background: #0f0f0f;
             color: white;
-        }
-
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 2fr 1fr;
-            grid-template-rows: 1fr 1fr;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             height: 100vh;
         }
-
-        .panel {
+        .login-card {
+            background: #141414;
             border: 1px solid #333;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
+            padding: 30px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 360px;
+            box-sizing: border-box;
+            text-align: center;
+            margin: 15px;
         }
-
-        /* FIXED PLACEMENT */
-        .top-left { grid-column: 1; grid-row: 1; overflow-y: auto; }
-        .bottom-left { grid-column: 1; grid-row: 2; }
-        .middle { grid-column: 2; grid-row: 1 / span 2; }
-        .top-right { grid-column: 3; grid-row: 1; }
-        .bottom-right { grid-column: 3; grid-row: 2; }
-
-        /* USERS */
-        #users {
-            padding: 10px;
-            overflow-y: auto;
-        }
-
-        .user {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-
-        .avatar {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: #222;
-        }
-
-        .ticket {
-            color: gold;
-        }
-
-        /* CHAT */
-        .chat {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-
-        .message {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .input-box {
-            display: flex;
-            border-top: 1px solid #333;
-        }
-
-        input {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            outline: none;
-            background: #1a1a1a;
-            color: white;
-        }
-
-        button {
-            padding: 10px;
-            cursor: pointer;
-            background: #333;
-            color: white;
+        h2 { margin-top: 0; color: #d4af37; letter-spacing: 1px; }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 15px;
+            border-radius: 4px;
             border: 1px solid #444;
+            background: #1e1e1e;
+            color: white;
+            box-sizing: border-box;
+            font-size: 16px;
         }
-
-        button:hover {
-            background: #444;
+        input:focus { outline: none; border-color: #d4af37; }
+        button {
+            background: #d4af37;
+            color: black;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: background 0.2s;
         }
-
-        .row {
-            display: flex;
-            gap: 10px;
-            padding: 10px;
-        }
-
-        .small-btn {
-            flex: 1;
-        }
-
-        #startPanel {
-            padding: 10px;
-            overflow-y: auto;
-        }
+        button:hover { background: white; }
     </style>
 </head>
-
 <body>
 
-<div class="container">
-
-    <div class="panel top-left">
-        <h3 style="padding:10px;margin:0;">Lobby</h3>
-        <div id="users"></div>
-    </div>
-
-    <div class="panel bottom-left">
-        <div class="row">
-            <button id="readyBtn" class="small-btn">Ready</button>
-            <button id="startBtn" class="small-btn">Start</button>
-        </div>
-
-        <div id="startPanel"></div>
-    </div>
-
-    <div class="panel middle" id="middlePanel">
-        <div style="padding:10px;">
-            <button id="loginBtn">Log in with Discord</button>
-        </div>
-    </div>
-
-    <div class="panel top-right"></div>
-    <div class="panel bottom-right"></div>
-
+<div class="login-card">
+    <h2>GOLDI ONLINE</h2>
+    <p style="color: #aaa; font-size: 14px;">Enter your identity parameters to establish connection link</p>
+    <input id="nameInp" placeholder="Username / Handle" autocomplete="off">
+    <button id="enterBtn">Connect to System</button>
 </div>
 
-<script type="module">
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import {
-    getDatabase,
-    ref,
-    set,
-    push,
-    onValue,
-    onChildAdded,
-    update
-} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
-
-/* FIREBASE CONFIGURATION */
-const firebaseConfig = {
-    apiKey: "AIzaSyCBanAFKnKzmPF3zzYn8rcKp9YmuzaWANE",
-    authDomain: "goldi-3e679.firebaseapp.com",
-    databaseURL: "https://goldi-3e679-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "goldi-3e679",
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-/* DISCORD CONFIGURATION */
-const CLIENT_ID = "1332728969958527058";
-const REDIRECT_URI = "https://best1111-dev.github.io/goldi-web/";
-
-let currentUser = null;
-let currentRoom = "lobby";
-
-/* LOGIN TRIGGER */
-document.addEventListener("click", (e) => {
-    if (e.target && e.target.id === "loginBtn") {
-        const url =
-            "https://discord.com/oauth2/authorize" +
-            `?client_id=${CLIENT_ID}` +
-            `&response_type=token` +
-            `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-            "&scope=identify";
-
-        window.location.href = url;
-    }
-});
-
-/* RUN INITIALIZATION ON LOAD */
-loadUser();
-
-/* EXTRACTION AND DATA HYDRATION */
-async function loadUser() {
-    const hash = new URLSearchParams(location.hash.substring(1));
-    const token = hash.get("access_token");
-
-    if (token) {
-        localStorage.setItem("token", token);
-        history.replaceState({}, "", location.pathname);
-    }
-
-    const saved = localStorage.getItem("token");
-    if (!saved) return;
-
-    try {
-        const targetUrl = "https://discord.com/api/users/@me";
-        const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
-
-        const res = await fetch(proxyUrl, {
-            headers: {
-                Authorization: `Bearer ${saved}`
-            }
-        });
-
-        if (!res.ok) throw new Error("Discord API rejected request or token expired");
-
-        currentUser = await res.json();
-        if (!currentUser) return;
-
-        // CRITICAL DATA PROPAGATION CACHE FOR GAME.HTML
-        localStorage.setItem("myId", currentUser.id);
-        localStorage.setItem("myName", currentUser.username);
-
-        const userAvatar = currentUser.avatar || "";
-
-        await set(ref(db, "users/" + currentUser.id), {
-            name: currentUser.username,
-            avatar: userAvatar,
-            ready: false,
-            room: "lobby"
-        });
-
-        initChat();
-        listenUsers();
-        listenMessages();
-        listenForGameStart();
+<script>
+    document.getElementById("enterBtn").onclick = () => {
+        const name = document.getElementById("nameInp").value.trim();
+        if(!name) { alert("Please input a valid username!"); return; }
         
-    } catch (err) {
-        console.error("Login verification stalled:", err);
-        localStorage.removeItem("token");
-        localStorage.removeItem("myId");
-        localStorage.removeItem("myName");
-    }
-}
-
-function listenForGameStart() {
-    if (!currentUser) return;
-    const userRoomRef = ref(db, `users/${currentUser.id}/room`);
-    onValue(userRoomRef, (snap) => {
-        if (snap.val() === "game") {
-            window.location.href = "game.html";
+        // Generate a random stable unique ID if one doesn't exist
+        if(!localStorage.getItem("myId")) {
+            localStorage.setItem("myId", "usr_" + Math.random().toString(36).substring(2, 11));
         }
-    });
-}
-
-/* TRACK LOBBY USERS */
-function listenUsers() {
-    onValue(ref(db, "users"), snap => {
-        const data = snap.val() || {};
-        const box = document.getElementById("users");
-        if (!box) return;
-        box.innerHTML = "";
-
-        Object.entries(data).forEach(([id, u]) => {
-            if (!u) return;
-
-            const div = document.createElement("div");
-            div.className = "user";
-
-            const avatar = u.avatar 
-                ? `https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png` 
-                : `https://cdn.discordapp.com/embed/avatars/0.png`;
-
-            div.innerHTML = `
-                <img class="avatar" src="${avatar}">
-                <div>
-                    ${u.name || "Unknown User"}
-                    ${u.ready ? '<span class="ticket">🎟</span>' : ''}
-                </div>
-            `;
-
-            box.appendChild(div);
-        });
-    });
-}
-
-/* LOBBY READY FUNCTIONALITY */
-document.getElementById("readyBtn").onclick = async () => {
-    if (!currentUser) return;
-
-    const userRef = ref(db, "users/" + currentUser.id);
-    const snap = await new Promise(res =>
-        onValue(userRef, res, { onlyOnce: true })
-    );
-
-    const currentData = snap.val() || { ready: false };
-    update(userRef, {
-        ready: !currentData.ready
-    });
-};
-
-/* LOBBY START FUNCTIONALITY */
-document.getElementById("startBtn").onclick = async () => {
-    const snap = await new Promise(res =>
-        onValue(ref(db, "users"), res, { onlyOnce: true })
-    );
-
-    const users = snap.val() || {};
-    // Gather ALL active lobby players to display in ready state check panel
-    const totalPlayers = Object.entries(users).filter(([_, u]) => u && u.room === "lobby");
-    const panel = document.getElementById("startPanel");
-
-    panel.innerHTML = `
-        <h4>Players in Lobby</h4>
-        ${totalPlayers.map(([id, u]) => `<div>${u.name} ${u.ready ? '✓' : '(Not Ready)'}</div>`).join("")}
-        <button id="startAnyways" style="margin-top:10px;">Start Anyways</button>
-    `;
-
-    document.getElementById("startAnyways").onclick = async () => {
-        const gameLaunchUpdates = {};
-        
-        // BUG FIX: Update ALL players inside the lobby to the game room in one atomic transaction
-        totalPlayers.forEach(([id]) => {
-            gameLaunchUpdates[`users/${id}/room`] = "game";
-        });
-
-        await update(ref(db), gameLaunchUpdates);
-        currentRoom = "game";
-        panel.innerHTML = "<b>Game started!</b>";
+        localStorage.setItem("myName", name);
+        window.location.href = "game.html";
     };
-};
-
-/* INITIALIZE CHAT UI SYSTEM */
-function initChat() {
-    const middle = document.getElementById("middlePanel");
-    if (!middle) return;
-
-    middle.innerHTML = `
-        <div class="chat">
-            <div class="messages" id="messages"></div>
-            <div class="input-box">
-                <input id="msg" placeholder="Type message...">
-                <button id="send">Send</button>
-            </div>
-        </div>
-    `;
-
-    document.getElementById("send").onclick = sendMessage;
-    document.getElementById("msg").addEventListener("keydown", e => {
-        if (e.key === "Enter") sendMessage();
-    });
-}
-
-/* DISPATCH MESSAGES TO DB */
-async function sendMessage() {
-    const input = document.getElementById("msg");
-    if (!input) return;
-    const text = input.value.trim();
-    if (!text || !currentUser) return;
-
-    await push(ref(db, "messages"), {
-        userId: currentUser.id,
-        name: currentUser.username,
-        avatar: currentUser.avatar || "",
-        room: currentRoom,
-        text,
-        time: Date.now()
-    });
-
-    input.value = "";
-}
-
-/* RENDER INCOMING CHAT MESSAGES */
-function listenMessages() {
-    const box = document.getElementById("messages");
-
-    onChildAdded(ref(db, "messages"), snap => {
-        const m = snap.val();
-        if (!m || m.room !== currentRoom || !box) return;
-
-        const avatar = m.avatar 
-            ? `https://cdn.discordapp.com/avatars/${m.userId}/${m.avatar}.png` 
-            : `https://cdn.discordapp.com/embed/avatars/0.png`;
-
-        const div = document.createElement("div");
-        div.className = "message";
-
-        div.innerHTML = `
-            <img class="avatar" src="${avatar}">
-            <div>
-                <b>${m.name || "System"}</b><br>
-                ${m.text}
-            </div>
-        `;
-
-        box.appendChild(div);
-        box.scrollTop = box.scrollHeight;
-    });
-}
-
 </script>
 </body>
 </html>
