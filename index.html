@@ -186,6 +186,10 @@ document.addEventListener("click", (e) => {
         window.location.href = url;
     }
 });
+
+/* AUTO RUN ON LOAD */
+loadUser();
+
 /* LOAD USER */
 async function loadUser() {
 
@@ -194,32 +198,44 @@ async function loadUser() {
 
     if (token) {
         localStorage.setItem("token", token);
+
+        // IMPORTANT: clear URL + force fresh state
         history.replaceState({}, "", location.pathname);
     }
 
     const saved = localStorage.getItem("token");
+
     if (!saved) return;
 
-    const res = await fetch("https://discord.com/api/users/@me", {
-        headers: { Authorization: `Bearer ${saved}` }
-    });
+    try {
 
-    if (!res.ok) return;
+        const res = await fetch("https://discord.com/api/users/@me", {
+            headers: {
+                Authorization: `Bearer ${saved}`
+            }
+        });
 
-    currentUser = await res.json();
+        if (!res.ok) throw new Error();
 
-    await set(ref(db, "users/" + currentUser.id), {
-        name: currentUser.username,
-        avatar: currentUser.avatar,
-        ready: false,
-        room: "lobby"
-    });
+        currentUser = await res.json();
 
-    initChat();
-    listenUsers();
-    listenMessages();
+        await set(ref(db, "users/" + currentUser.id), {
+            name: currentUser.username,
+            avatar: currentUser.avatar,
+            ready: false,
+            room: "lobby"
+        });
+
+        initChat();
+        listenUsers();
+        listenMessages();
+
+    } catch (err) {
+
+        localStorage.removeItem("token");
+        console.error("Login failed", err);
+    }
 }
-
 /* USERS LIST */
 function listenUsers() {
     onValue(ref(db, "users"), snap => {
