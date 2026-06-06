@@ -193,21 +193,16 @@ loadUser();
 /* LOAD USER */
 async function loadUser() {
 
-    // 1. ALWAYS read hash first
-    const hashParams = new URLSearchParams(window.location.hash.slice(1));
-    const tokenFromHash = hashParams.get("access_token");
+    const hash = new URLSearchParams(location.hash.substring(1));
+    const token = hash.get("access_token");
 
-    // 2. If token exists in URL → store it and FORCE reload cleanly
-    if (tokenFromHash) {
-        localStorage.setItem("token", tokenFromHash);
+    if (token) {
+        localStorage.setItem("token", token);
 
-        // remove hash and reload once (IMPORTANT FIX)
-        window.location.hash = "";
-        window.location.reload();
-        return;
+        // ONLY clean URL (DO NOT reload)
+        history.replaceState({}, "", location.pathname);
     }
 
-    // 3. use stored token
     const saved = localStorage.getItem("token");
     if (!saved) return;
 
@@ -219,9 +214,12 @@ async function loadUser() {
             }
         });
 
-        if (!res.ok) throw new Error("Invalid token");
+        if (!res.ok) throw new Error();
 
         currentUser = await res.json();
+
+        // IMPORTANT: prevent double init bugs
+        if (!currentUser) return;
 
         await set(ref(db, "users/" + currentUser.id), {
             name: currentUser.username,
@@ -235,8 +233,7 @@ async function loadUser() {
         listenMessages();
 
     } catch (err) {
-
-        console.log("Token invalid, clearing...");
+        console.log("Login failed:", err);
         localStorage.removeItem("token");
     }
 }
