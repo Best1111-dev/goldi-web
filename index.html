@@ -10,11 +10,159 @@
     <div class="panel top-left">Top Left</div>
     <div class="panel bottom-left">Bottom Left</div>
 
-    <div class="panel middle">Middle</div>
+    <div class="panel middle" id="middlePanel">
+    <button id="loginBtn">Log In with Discord</button></div>
 
     <div class="panel top-right">Top Right</div>
     <div class="panel bottom-right">Bottom Right</div>
 </div>
+<script>
+const CLIENT_ID = "1332728969958527058";
+const REDIRECT_URI = "https://best1111-dev.github.io/goldi-web/";
 
+document.getElementById("loginBtn")?.addEventListener("click", () => {
+
+    const url =
+        "https://discord.com/oauth2/authorize" +
+        `?client_id=${CLIENT_ID}` +
+        "&response_type=token" +
+        `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+        "&scope=identify";
+
+    window.location.href = url;
+});
+
+async function init() {
+
+    // Parse token from URL hash
+    const hash = new URLSearchParams(
+        window.location.hash.substring(1)
+    );
+
+    const token = hash.get("access_token");
+
+    if (token) {
+        localStorage.setItem(
+            "discord_token",
+            token
+        );
+
+        window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+        );
+    }
+
+    const savedToken =
+        localStorage.getItem("discord_token");
+
+    if (!savedToken)
+        return;
+
+    try {
+
+        const response = await fetch(
+            "https://discord.com/api/users/@me",
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${savedToken}`
+                }
+            }
+        );
+
+        if (!response.ok) {
+            localStorage.removeItem(
+                "discord_token"
+            );
+            return;
+        }
+
+        const user = await response.json();
+
+        showChat(user);
+
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function showChat(user) {
+
+    const avatar =
+        `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`;
+
+    document.getElementById(
+        "middlePanel"
+    ).innerHTML = `
+        <div class="chat-container">
+
+            <div
+                id="messages"
+                class="chat-messages"
+            ></div>
+
+            <div class="chat-input-row">
+                <input
+                    id="messageInput"
+                    placeholder="Type a message..."
+                >
+
+                <button id="sendBtn">
+                    Send
+                </button>
+            </div>
+
+        </div>
+    `;
+
+    document
+        .getElementById("sendBtn")
+        .addEventListener("click", () => {
+
+            const input =
+                document.getElementById(
+                    "messageInput"
+                );
+
+            const text =
+                input.value.trim();
+
+            if (!text)
+                return;
+
+            const msg =
+                document.createElement("div");
+
+            msg.className = "message";
+
+            msg.innerHTML = `
+                <img
+                    src="${avatar}"
+                    class="avatar"
+                >
+
+                <div>
+                    <div class="username">
+                        ${user.username}
+                    </div>
+
+                    <div>
+                        ${text}
+                    </div>
+                </div>
+            `;
+
+            document
+                .getElementById("messages")
+                .appendChild(msg);
+
+            input.value = "";
+        });
+}
+
+init();
+</script>
 </body>
 </html>
