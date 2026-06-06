@@ -1,31 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>My First Website</title>
-
-    <style>
-        body {
-            font-family: Arial;
-            text-align: center;
-            margin-top: 100px;
-        }
-
-        button {
-            padding: 10px 20px;
-            font-size: 20px;
-        }
-    </style>
+    <title>5 Panel Layout</title>
+    <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-    <h1>My First Website</h1>
 
-    <button id="btn">Click Me</button>
+<div class="container">
+    <div class="panel top-left">Top Left</div>
+    <div class="panel bottom-left">Bottom Left</div>
 
-    <script>
-        document.getElementById("btn").onclick = () => {
-            alert("Hello World!");
-        };
-    </script>
+    <div class="panel middle">Middle</div>
+
+    <div class="panel top-right">Top Right</div>
+    <div class="panel bottom-right">Bottom Right</div>
+</div>
+
 </body>
 </html>
