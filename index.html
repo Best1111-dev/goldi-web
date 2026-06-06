@@ -164,5 +164,266 @@ function showChat(user) {
 
 init();
 </script>
+    <script type="module">
+
+import { initializeApp }
+from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+
+import {
+    getDatabase,
+    ref,
+    push,
+    onChildAdded
+}
+from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyCBanAFKnKzmPF3zzYn8rcKp9YmuzaWANE",
+    authDomain: "goldi-3e679.firebaseapp.com",
+    databaseURL: "https://goldi-3e679-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "goldi-3e679",
+    storageBucket: "goldi-3e679.firebasestorage.app",
+    messagingSenderId: "330270049190",
+    appId: "1:330270049190:web:dc133add5b94c1bf280567",
+    measurementId: "G-B3C5S3FQ6S"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+const CLIENT_ID = "1332728969958527058";
+const REDIRECT_URI =
+    "https://best1111-dev.github.io/goldi-web/";
+
+const middlePanel =
+    document.getElementById("middlePanel");
+
+let currentUser = null;
+
+function createLoginButton() {
+
+    middlePanel.innerHTML =
+        `<button id="loginBtn">
+            Log In With Discord
+        </button>`;
+
+    document
+        .getElementById("loginBtn")
+        .onclick = () => {
+
+            window.location.href =
+                "https://discord.com/oauth2/authorize" +
+                `?client_id=${CLIENT_ID}` +
+                "&response_type=token" +
+                `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+                "&scope=identify";
+        };
+}
+
+function createChatUI() {
+
+    middlePanel.innerHTML = `
+        <div class="chat-container">
+
+            <div
+                class="messages"
+                id="messages"
+            ></div>
+
+            <div class="input-row">
+                <input
+                    id="messageInput"
+                    placeholder="Type a message..."
+                >
+            </div>
+
+        </div>
+    `;
+
+    const input =
+        document.getElementById(
+            "messageInput"
+        );
+
+    input.addEventListener(
+        "keydown",
+        async (e) => {
+
+            if (e.key !== "Enter")
+                return;
+
+            const text =
+                input.value.trim();
+
+            if (!text)
+                return;
+
+            await push(
+                ref(db, "messages"),
+                {
+                    username:
+                        currentUser.username,
+
+                    avatar:
+                        currentUser.avatar,
+
+                    userId:
+                        currentUser.id,
+
+                    message:
+                        text,
+
+                    timestamp:
+                        Date.now()
+                }
+            );
+
+            input.value = "";
+        }
+    );
+
+    listenForMessages();
+}
+
+function listenForMessages() {
+
+    const messages =
+        document.getElementById("messages");
+
+    messages.innerHTML = "";
+
+    onChildAdded(
+        ref(db, "messages"),
+        snapshot => {
+
+            const data =
+                snapshot.val();
+
+            const avatarUrl =
+                `https://cdn.discordapp.com/avatars/${data.userId}/${data.avatar}.png`;
+
+            const div =
+                document.createElement("div");
+
+            div.className =
+                "message";
+
+            div.innerHTML = `
+                <div class="user-block">
+
+                    <img
+                        class="avatar"
+                        src="${avatarUrl}"
+                    >
+
+                    <div
+                        class="username"
+                    >
+                        ${escapeHtml(
+                            data.username
+                        )}
+                    </div>
+
+                </div>
+
+                <div
+                    class="message-text"
+                >
+                    ${escapeHtml(
+                        data.message
+                    )}
+                </div>
+            `;
+
+            messages.appendChild(div);
+
+            messages.scrollTop =
+                messages.scrollHeight;
+        }
+    );
+}
+
+function escapeHtml(text) {
+
+    const div =
+        document.createElement("div");
+
+    div.textContent =
+        text;
+
+    return div.innerHTML;
+}
+
+async function loadUser() {
+
+    const hash =
+        new URLSearchParams(
+            window.location.hash.substring(
+                1
+            )
+        );
+
+    const token =
+        hash.get("access_token");
+
+    if (token) {
+
+        localStorage.setItem(
+            "discord_token",
+            token
+        );
+
+        history.replaceState(
+            {},
+            "",
+            location.pathname
+        );
+    }
+
+    const savedToken =
+        localStorage.getItem(
+            "discord_token"
+        );
+
+    if (!savedToken) {
+
+        createLoginButton();
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "https://discord.com/api/users/@me",
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${savedToken}`
+                    }
+                }
+            );
+
+        if (!response.ok)
+            throw new Error();
+
+        currentUser =
+            await response.json();
+
+        createChatUI();
+
+    } catch {
+
+        localStorage.removeItem(
+            "discord_token"
+        );
+
+        createLoginButton();
+    }
+}
+
+loadUser();
+
+</script>
 </body>
 </html>
