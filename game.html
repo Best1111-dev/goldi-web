@@ -211,6 +211,7 @@
             text-align: left;
             margin-top: 10px;
         }
+        .manifest-container destroyed { display: none; }
         .manifest-section { margin-bottom: 20px; }
         .manifest-section h4 { margin: 0 0 10px 0; font-size: 18px; border-bottom: 1px solid #444; padding-bottom: 4px; }
         .manifest-section.vills h4 { color: #5dade2; }
@@ -355,6 +356,7 @@ let resetInProgress = false;
 
 const ROLE_DATA = {
     "confusion vampire": { p: 1, side: "vampire", icon: "🌀", desc: "Choose 1 target at night. Switch the target of their action to another random player." },
+    "invisible vampire": { p: 1.5, side: "vampire", icon: "🫥", desc: "Choose 1 player at night to make them invisible, blocking all non-witch or non-artist visits to them." },
     "ice cream maker": { p: 2, side: "villager", icon: "🍦", desc: "Freeze 1 target at night to prevent them from taking action. Must rest 1 night after use." },
     "troll": { p: 3, side: "neutral", icon: "🧌", desc: "Choose 1 player at night. If they visited someone, they die. If they stayed home, they discover who you are." },
     "witch": { p: 4, side: "villager", icon: "🧙‍♀️", desc: "Draws a random potion at dusk (Useless, Poison, Invisibility). Poison kills target; Invisibility blocks all visits to target." },
@@ -417,7 +419,7 @@ function syncGameEngine() {
         // --- EXTENDED PLAYER NPC SEED STAGING ---
         if (isHost && Object.keys(users).length === 1 && currentPhase !== "game_over") {
             const npcUpdates = {};
-            const mockRoles = ["vampire progenitor", "jester", "doctor", "pokemon trainer", "judge", "spirit artist", "dragoon", "rando", "inflator"];
+            const mockRoles = ["vampire progenitor", "jester", "doctor", "pokemon trainer", "judge", "spirit artist", "invisible vampire", "rando", "inflator"];
             for (let i = 1; i <= 9; i++) {
                 let suffix = i === 1 ? "alpha" : i === 2 ? "beta" : i === 3 ? "gamma" : i === 4 ? "delta" : `bot_${i}`;
                 npcUpdates[`users/npc_${suffix}`] = { 
@@ -439,7 +441,6 @@ function syncGameEngine() {
         myProfile = users[myId];
 
         // FIXED CRITICAL RELOAD PERSISTENCE INJECTION HOOK:
-        // Only run allocation if the entire room is unassigned, preventing role resets on reload.
         if (isHost && currentPhase !== "game_over") {
             let spaceNeedsallotment = Object.values(users).some(u => !u.role);
             if (spaceNeedsallotment) {
@@ -595,7 +596,6 @@ function setupMobileSwipeGestures() {
     }
 
     window.addEventListener("touchstart", e => {
-        // Direct tap exclusion for textareas/inputs to prevent keyboard overlay interference
         if(e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
         touchStartX = e.changedTouches[0].screenX;
     }, { passive: true });
@@ -606,13 +606,11 @@ function setupMobileSwipeGestures() {
         
         const dragThreshold = 60;
         if (touchStartX - touchEndX > dragThreshold) {
-            // Swiped Left -> Advance view rightwards
             if (currentTrackIndex < 2) {
                 currentTrackIndex++;
                 applyMobileTrackShift();
             }
         } else if (touchEndX - touchStartX > dragThreshold) {
-            // Swiped Right -> Pull view leftwards
             if (currentTrackIndex > 0) {
                 currentTrackIndex--;
                 applyMobileTrackShift();
@@ -1191,6 +1189,12 @@ async function processNightActions() {
     });
 
     Object.entries(playersCache).forEach(([id, p]) => {
+        if (p.role === "invisible vampire" && interactionTargets[id]) {
+            invisiblePlayers.add(interactionTargets[id]);
+        }
+    });
+
+    Object.entries(playersCache).forEach(([id, p]) => {
         if (p.role === "spirit artist" && interactionTargets[id]) {
             invisiblePlayers.add(interactionTargets[id]);
         }
@@ -1218,7 +1222,7 @@ async function processNightActions() {
     });
 
     Object.keys(interactionTargets).forEach(actorId => {
-        if (playersCache[actorId].role !== "witch" && playersCache[actorId].role !== "spirit artist" && invisiblePlayers.has(interactionTargets[actorId])) {
+        if (playersCache[actorId].role !== "witch" && playersCache[actorId].role !== "spirit artist" && playersCache[actorId].role !== "invisible vampire" && invisiblePlayers.has(interactionTargets[actorId])) {
             delete interactionTargets[actorId];
         }
     });
