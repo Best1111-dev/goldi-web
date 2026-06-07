@@ -57,6 +57,7 @@
             height: 30px;
             border-radius: 50%;
             background: #222;
+            object-fit: cover;
         }
 
         .ticket {
@@ -123,6 +124,45 @@
             overflow-y: auto;
         }
 
+        /* GUEST MODAL INTERFACE */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .modal-content {
+            background: #161616;
+            padding: 25px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        .avatar-selection {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        .selectable-avatar {
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+            object-fit: cover;
+        }
+        .selectable-avatar.selected {
+            border-color: gold;
+        }
+
         /* MOBILE STATUS HUD INDICATORS */
         .mobile-hud {
             display: none;
@@ -150,10 +190,10 @@
             
             .container {
                 display: flex;
-                width: 300vw; /* Creates three full width structural view tracks */
+                width: 300vw;
                 height: calc(100vh - 40px);
                 margin-top: 40px;
-                transform: translateX(-100vw); /* Focus defaults on Middle Panel view */
+                transform: translateX(-100vw);
             }
 
             .left-track, .middle-track, .right-track {
@@ -194,8 +234,10 @@
 
     <div class="middle-track">
         <div class="panel middle" id="middlePanel">
-            <div style="padding:10px;">
-                <button id="loginBtn">Log in with Discord</button>
+            <div style="padding:20px; display: flex; flex-direction: column; gap: 15px; align-items: center; justify-content: center; height: 100%;">
+                <button id="loginBtn" style="width: 220px; padding: 12px;">Log in with Discord</button>
+                <span style="color: #666; font-size: 14px;">— OR —</span>
+                <button id="guestModalBtn" style="width: 220px; padding: 12px; background: #222; border-color: #444;">Sign in as Guest</button>
             </div>
         </div>
     </div>
@@ -203,6 +245,28 @@
     <div class="right-track">
         <div class="panel top-right"></div>
         <div class="panel bottom-right"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="guestModal">
+    <div class="modal-content">
+        <h3 style="margin-top: 0; color: gold;">Guest Identity Setup</h3>
+        <p style="font-size: 13px; color: #aaa; margin-bottom: 20px;">Pick an online avatar profile icon and user handle nickname:</p>
+        
+        <input type="text" id="guestUsername" placeholder="Enter custom nickname..." style="width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #444;">
+        
+        <div class="avatar-selection">
+            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=Felix" class="selectable-avatar selected" data-url="https://api.dicebear.com/7.x/pixel-art/svg?seed=Felix">
+            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=Aneka" class="selectable-avatar" data-url="https://api.dicebear.com/7.x/pixel-art/svg?seed=Aneka">
+            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=Jack" class="selectable-avatar" data-url="https://api.dicebear.com/7.x/pixel-art/svg?seed=Jack">
+            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=Luna" class="selectable-avatar" data-url="https://api.dicebear.com/7.x/pixel-art/svg?seed=Luna">
+            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=Buster" class="selectable-avatar" data-url="https://api.dicebear.com/7.x/pixel-art/svg?seed=Buster">
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button id="closeGuestModal" style="flex: 1; background: #222;">Cancel</button>
+            <button id="confirmGuestLogin" style="flex: 1; background: gold; color: black; border: none; font-weight: bold;">Enter Lobby</button>
+        </div>
     </div>
 </div>
 
@@ -227,57 +291,114 @@ const REDIRECT_URI = "https://best1111-dev.github.io/goldi-web/";
 
 let currentUser = null;
 let currentRoom = "lobby";
+let selectedGuestAvatarUrl = "https://api.dicebear.com/7.x/pixel-art/svg?seed=Felix";
 
-document.addEventListener("click", (e) => {
-    if (e.target && e.target.id === "loginBtn") {
-        const url =
-            "https://discord.com/oauth2/authorize" +
-            `?client_id=${CLIENT_ID}` +
-            `&response_type=token` +
-            `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-            "&scope=identify";
-        window.location.href = url;
-    }
+/* DISCORD AUTH EXPLICIT DIRECTIVES */
+document.getElementById("loginBtn").onclick = () => {
+    const url =
+        "https://discord.com/oauth2/authorize" +
+        `?client_id=${CLIENT_ID}` +
+        `&response_type=token` +
+        `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+        "&scope=identify";
+    window.location.href = url;
+};
+
+/* GUEST INTERFACE OVERLAY CONTROLS */
+const guestModal = document.getElementById("guestModal");
+document.getElementById("guestModalBtn").onclick = () => { guestModal.style.display = "flex"; };
+document.getElementById("closeGuestModal").onclick = () => { guestModal.style.display = "none"; };
+
+// Avatar node picking highlight handlers
+document.querySelectorAll(".selectable-avatar").forEach(img => {
+    img.onclick = (e) => {
+        document.querySelectorAll(".selectable-avatar").forEach(i => i.classList.remove("selected"));
+        e.target.classList.add("selected");
+        selectedGuestAvatarUrl = e.target.getAttribute("data-url");
+    };
 });
+
+document.getElementById("confirmGuestLogin").onclick = async () => {
+    const usernameInput = document.getElementById("guestUsername").value.trim();
+    const finalName = usernameInput || "Guest_" + Math.floor(1000 + Math.random() * 9000);
+    const generatedId = "guest_" + Date.now();
+
+    const guestProfile = {
+        id: generatedId,
+        username: finalName,
+        avatar: selectedGuestAvatarUrl,
+        isGuest: true
+    };
+
+    localStorage.setItem("guestUser", JSON.stringify(guestProfile));
+    guestModal.style.display = "none";
+    
+    await loadUser();
+};
 
 loadUser();
 
 async function loadUser() {
+    // Priority 1: Check hash tokens from active Discord redirects
     const hash = new URLSearchParams(location.hash.substring(1));
     const token = hash.get("access_token");
 
     if (token) {
         localStorage.setItem("token", token);
+        localStorage.removeItem("guestUser"); // Flush stale sessions
         history.replaceState({}, "", location.pathname);
     }
 
-    const saved = localStorage.getItem("token");
-    if (!saved) return;
+    const savedToken = localStorage.getItem("token");
+    const savedGuest = localStorage.getItem("guestUser");
+
+    if (!savedToken && !savedGuest) return;
 
     try {
-        const targetUrl = "https://discord.com/api/users/@me";
-        const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
+        if (savedToken) {
+            const targetUrl = "https://discord.com/api/users/@me";
+            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
 
-        const res = await fetch(proxyUrl, {
-            headers: { Authorization: `Bearer ${saved}` }
-        });
+            const res = await fetch(proxyUrl, {
+                headers: { Authorization: `Bearer ${savedToken}` }
+            });
 
-        if (!res.ok) throw new Error("Discord API rejected request or token expired");
+            if (!res.ok) throw new Error("Discord Token Expired");
 
-        currentUser = await res.json();
-        if (!currentUser) return;
+            currentUser = await res.json();
+            if (!currentUser) return;
 
-        localStorage.setItem("myId", currentUser.id);
-        localStorage.setItem("myName", currentUser.username);
+            localStorage.setItem("myId", currentUser.id);
+            localStorage.setItem("myName", currentUser.username);
 
-        const userAvatar = currentUser.avatar || "";
+            await set(ref(db, "users/" + currentUser.id), {
+                name: currentUser.username,
+                avatar: currentUser.avatar || "",
+                ready: false,
+                room: "lobby",
+                isGuest: false
+            });
+        } 
+        else if (savedGuest) {
+            const guestData = JSON.parse(savedGuest);
+            currentUser = {
+                id: guestData.id,
+                username: guestData.username,
+                avatar: guestData.avatar,
+                isGuest: true
+            };
 
-        await set(ref(db, "users/" + currentUser.id), {
-            name: currentUser.username,
-            avatar: userAvatar,
-            ready: false,
-            room: "lobby"
-        });
+            localStorage.setItem("myId", currentUser.id);
+            localStorage.setItem("myName", currentUser.username);
+
+            await set(ref(db, "users/" + currentUser.id), {
+                name: currentUser.username,
+                avatar: currentUser.avatar,
+                ready: false,
+                room: "lobby",
+                isGuest: true
+            });
+        }
 
         initChat();
         listenUsers();
@@ -286,8 +407,9 @@ async function loadUser() {
         setupMobileSwipeEngine();
         
     } catch (err) {
-        console.error("Login verification stalled:", err);
+        console.error("Authentication mapping routine stalled:", err);
         localStorage.removeItem("token");
+        localStorage.removeItem("guestUser");
         localStorage.removeItem("myId");
         localStorage.removeItem("myName");
     }
@@ -316,12 +438,18 @@ function listenUsers() {
             const div = document.createElement("div");
             div.className = "user";
 
-            const avatar = u.avatar 
-                ? `https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png` 
-                : `https://cdn.discordapp.com/embed/avatars/0.png`;
+            // Conditional parser logic ensuring cross-compatibility between standard raw CDNs or Direct Image Vector URLs
+            let avatarSrc = "";
+            if (u.isGuest) {
+                avatarSrc = u.avatar;
+            } else {
+                avatarSrc = u.avatar 
+                    ? `https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png` 
+                    : `https://cdn.discordapp.com/embed/avatars/0.png`;
+            }
 
             div.innerHTML = `
-                <img class="avatar" src="${avatar}">
+                <img class="avatar" src="${avatarSrc}">
                 <div>
                     ${u.name || "Unknown User"}
                     ${u.ready ? '<span class="ticket">🎟</span>' : ''}
@@ -354,8 +482,6 @@ document.getElementById("startBtn").onclick = async () => {
 
     document.getElementById("startAnyways").onclick = async () => {
         const gameLaunchUpdates = {};
-        
-        // Clear active room game parameters across atomic updates
         gameLaunchUpdates["gameState/isGameInProgress"] = true;
 
         totalPlayers.forEach(([id]) => {
@@ -399,6 +525,7 @@ async function sendMessage() {
         userId: currentUser.id,
         name: currentUser.username,
         avatar: currentUser.avatar || "",
+        isGuest: currentUser.isGuest || false,
         room: currentRoom,
         text,
         time: Date.now()
@@ -412,14 +539,19 @@ function listenMessages() {
         const m = snap.val();
         if (!m || m.room !== currentRoom || !box) return;
 
-        const avatar = m.avatar 
-            ? `https://cdn.discordapp.com/avatars/${m.userId}/${m.avatar}.png` 
-            : `https://cdn.discordapp.com/embed/avatars/0.png`;
+        let avatarSrc = "";
+        if (m.isGuest) {
+            avatarSrc = m.avatar;
+        } else {
+            avatarSrc = m.avatar 
+                ? `https://cdn.discordapp.com/avatars/${m.userId}/${m.avatar}.png` 
+                : `https://cdn.discordapp.com/embed/avatars/0.png`;
+        }
 
         const div = document.createElement("div");
         div.className = "message";
         div.innerHTML = `
-            <img class="avatar" src="${avatar}">
+            <img class="avatar" src="${avatarSrc}">
             <div>
                 <b>${m.name || "System"}</b><br>
                 ${m.text}
@@ -434,7 +566,7 @@ function listenMessages() {
 function setupMobileSwipeEngine() {
     const track = document.getElementById("swipeContainer");
     const pills = [document.getElementById("pill-0"), document.getElementById("pill-1"), document.getElementById("pill-2")];
-    let currentTrackIndex = 1; // Center Panel view focus default
+    let currentTrackIndex = 1;
     let touchStartX = 0;
     let touchEndX = 0;
 
@@ -452,18 +584,18 @@ function setupMobileSwipeEngine() {
     }
 
     window.addEventListener("touchstart", e => {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.closest("#guestModal")) return;
         touchStartX = e.changedTouches[0].screenX;
     }, { passive: true });
 
     window.addEventListener("touchend", e => {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.closest("#guestModal")) return;
         touchEndX = e.changedTouches[0].screenX;
         
         const threshold = 50;
-        if (touchStartX - touchEndX > threshold) { // Swipe Left
+        if (touchStartX - touchEndX > threshold) {
             if (currentTrackIndex < 2) { currentTrackIndex++; applyTrackShift(); }
-        } else if (touchEndX - touchStartX > threshold) { // Swipe Right
+        } else if (touchEndX - touchStartX > threshold) {
             if (currentTrackIndex > 0) { currentTrackIndex--; applyTrackShift(); }
         }
     }, { passive: true });
