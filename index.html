@@ -69,12 +69,14 @@
             display: flex;
             flex-direction: column;
             height: 100%;
+            box-sizing: border-box;
         }
 
         .messages {
             flex: 1;
             overflow-y: auto;
             padding: 10px;
+            min-height: 0; /* CRITICAL: Allows flex child to shrink properly on small screens */
         }
 
         .message {
@@ -86,15 +88,17 @@
         .input-box {
             display: flex;
             border-top: 1px solid #333;
+            background: #1a1a1a;
         }
 
         input {
             flex: 1;
-            padding: 10px;
+            padding: 12px;
             border: none;
             outline: none;
             background: #1a1a1a;
             color: white;
+            font-size: 16px; /* Prevents iOS auto-zooming into view layouts */
         }
 
         button {
@@ -191,7 +195,8 @@
             .container {
                 display: flex;
                 width: 300vw;
-                height: calc(100vh - 40px);
+                /* Use dynamic viewport height to account for mobile address bars */
+                height: calc(100dvh - 40px); 
                 margin-top: 40px;
                 transform: translateX(-100vw);
             }
@@ -206,6 +211,12 @@
 
             .panel { flex: 1; height: 50%; border: none; border-bottom: 1px solid #222; }
             .middle-track .panel { height: 100%; }
+            
+            /* Enforce strict layout constraints on the chat component when inside mobile tracks */
+            .chat {
+                height: calc(100dvh - 40px) !important;
+                max-height: calc(100dvh - 40px) !important;
+            }
         }
     </style>
 </head>
@@ -243,7 +254,9 @@
     </div>
 
     <div class="right-track">
-        <div class="panel top-right"></div>
+        <div class="panel top-right" style="padding: 15px; align-items: center; justify-content: center;">
+            <button id="logoutBtn" style="width: 80%; display: none; background: #8b0000; border-color: #a00;">Log Out</button>
+        </div>
         <div class="panel bottom-right"></div>
     </div>
 </div>
@@ -273,7 +286,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import {
-    getDatabase, ref, set, push, onValue, onChildAdded, update
+    getDatabase, ref, set, push, onValue, onChildAdded, update, remove
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -300,7 +313,7 @@ document.getElementById("loginBtn").onclick = () => {
         `?client_id=${CLIENT_ID}` +
         `&response_type=token` +
         `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-        "&scope=identify";
+        `&scope=identify`;
     window.location.href = url;
 };
 
@@ -309,7 +322,6 @@ const guestModal = document.getElementById("guestModal");
 document.getElementById("guestModalBtn").onclick = () => { guestModal.style.display = "flex"; };
 document.getElementById("closeGuestModal").onclick = () => { guestModal.style.display = "none"; };
 
-// Avatar node picking highlight handlers
 document.querySelectorAll(".selectable-avatar").forEach(img => {
     img.onclick = (e) => {
         document.querySelectorAll(".selectable-avatar").forEach(i => i.classList.remove("selected"));
@@ -336,16 +348,25 @@ document.getElementById("confirmGuestLogin").onclick = async () => {
     await loadUser();
 };
 
+document.getElementById("logoutBtn").onclick = async () => {
+    if (currentUser) {
+        try {
+            await remove(ref(db, "users/" + currentUser.id));
+        } catch(e) { console.error("Error clearing user session trace:", e); }
+    }
+    localStorage.clear();
+    window.location.reload();
+};
+
 loadUser();
 
 async function loadUser() {
-    // Priority 1: Check hash tokens from active Discord redirects
     const hash = new URLSearchParams(location.hash.substring(1));
     const token = hash.get("access_token");
 
     if (token) {
         localStorage.setItem("token", token);
-        localStorage.removeItem("guestUser"); // Flush stale sessions
+        localStorage.removeItem("guestUser"); 
         history.replaceState({}, "", location.pathname);
     }
 
@@ -400,6 +421,8 @@ async function loadUser() {
             });
         }
 
+        document.getElementById("logoutBtn").style.display = "block";
+
         initChat();
         listenUsers();
         listenMessages();
@@ -438,7 +461,6 @@ function listenUsers() {
             const div = document.createElement("div");
             div.className = "user";
 
-            // Conditional parser logic ensuring cross-compatibility between standard raw CDNs or Direct Image Vector URLs
             let avatarSrc = "";
             if (u.isGuest) {
                 avatarSrc = u.avatar;
@@ -503,7 +525,7 @@ function initChat() {
         <div class="chat">
             <div class="messages" id="messages"></div>
             <div class="input-box">
-                <input id="msg" placeholder="Type message...">
+                <input id="msg" type="text" placeholder="Type message..." autocomplete="off">
                 <button id="send">Send</button>
             </div>
         </div>
@@ -531,6 +553,7 @@ async function sendMessage() {
         time: Date.now()
     });
     input.value = "";
+    input.focus();
 }
 
 function listenMessages() {
@@ -546,7 +569,7 @@ function listenMessages() {
             avatarSrc = m.avatar 
                 ? `https://cdn.discordapp.com/avatars/${m.userId}/${m.avatar}.png` 
                 : `https://cdn.discordapp.com/embed/avatars/0.png`;
-        }
+            }
 
         const div = document.createElement("div");
         div.className = "message";
@@ -562,10 +585,11 @@ function listenMessages() {
     });
 }
 
-/* MOBILE SURFACE TOUCH SWIPE CONTROLLER */
 function setupMobileSwipeEngine() {
     const track = document.getElementById("swipeContainer");
     const pills = [document.getElementById("pill-0"), document.getElementById("pill-1"), document.getElementById("pill-2")];
+    const tracks = document.querySelectorAll('.left-track, .middle-track, .right-track');
+    
     let currentTrackIndex = 1;
     let touchStartX = 0;
     let touchEndX = 0;
@@ -583,22 +607,24 @@ function setupMobileSwipeEngine() {
         });
     }
 
-    window.addEventListener("touchstart", e => {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.closest("#guestModal")) return;
-        touchStartX = e.changedTouches[0].screenX;
-    }, { passive: true });
+    tracks.forEach(trackElement => {
+        trackElement.addEventListener("touchstart", e => {
+            if (e.target.closest(".chat") || e.target.closest("#guestModal")) return;
+            touchStartX = e.changedTouches[0].screenX;
+        }, { passive: true });
 
-    window.addEventListener("touchend", e => {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.closest("#guestModal")) return;
-        touchEndX = e.changedTouches[0].screenX;
-        
-        const threshold = 50;
-        if (touchStartX - touchEndX > threshold) {
-            if (currentTrackIndex < 2) { currentTrackIndex++; applyTrackShift(); }
-        } else if (touchEndX - touchStartX > threshold) {
-            if (currentTrackIndex > 0) { currentTrackIndex--; applyTrackShift(); }
-        }
-    }, { passive: true });
+        trackElement.addEventListener("touchend", e => {
+            if (e.target.closest(".chat") || e.target.closest("#guestModal")) return;
+            touchEndX = e.changedTouches[0].screenX;
+            
+            const threshold = 60;
+            if (touchStartX - touchEndX > threshold) {
+                if (currentTrackIndex < 2) { currentTrackIndex++; applyTrackShift(); }
+            } else if (touchEndX - touchStartX > threshold) {
+                if (currentTrackIndex > 0) { currentTrackIndex--; applyTrackShift(); }
+            }
+        }, { passive: true });
+    });
 
     window.addEventListener("resize", applyTrackShift);
 }
