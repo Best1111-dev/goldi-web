@@ -62,6 +62,7 @@
             text-align: center;
             font-weight: bold;
             font-size: 16px;
+            flex-shrink: 0;
         }
         .timer-banner.day { background: #d4af37; color: black; }
 
@@ -101,9 +102,9 @@
         .judge-btn:hover { background: #ff4d4d; }
 
         /* CHATS INTERFACE VISUAL STYLE */
-        .chat-wrap { display: flex; flex-direction: column; height: 100%; }
-        .chat-messages { flex: 1; overflow-y: auto; padding: 15px; background: #0b0b0b; }
-        .chat-input-row { display: flex; border-top: 1px solid #252525; background: #141414; }
+        .chat-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 15px; background: #0b0b0b; min-height: 0; }
+        .chat-input-row { display: flex; border-top: 1px solid #252525; background: #141414; flex-shrink: 0; }
         .chat-input-row input { flex: 1; padding: 14px; border: none; background: #181818; color: white; outline: none; font-size: 15px; width: 50px; }
         .chat-input-row button { padding: 14px 24px; background: #c99700; color: black; font-weight: bold; border: none; cursor: pointer; font-size: 14px; }
         .chat-input-row button:hover { background: #fff; }
@@ -144,6 +145,7 @@
         .msg.sys { display: block; color: #00ffcc; font-weight: bold; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #222; }
         .msg.vamp .msg-username { color: #ff4444; }
         .msg.priv { font-style: italic; opacity: 0.65; }
+        .msg.medium-override { display: block; color: #3399ff; font-weight: bold; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #225588; }
 
         /* WILLS & WIKI */
         textarea.will-box {
@@ -178,6 +180,7 @@
             text-align: center;
             margin-bottom: 10px;
             border-radius: 4px;
+            flex-shrink: 0;
         }
         .court-btns { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
         .btn-guilty { background: #ff3333; color: white; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; }
@@ -263,7 +266,8 @@
             }
 
             .panel { flex: 1; height: 50%; border: none; border-bottom: 1px solid #222; }
-            .middle-track .panel { height: 100%; }
+            .middle-track .panel { height: 100%; display: flex; flex-direction: column; }
+            .middle-track .panel .panel-body { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 0; }
         }
     </style>
 </head>
@@ -369,6 +373,7 @@ const ROLE_DATA = {
     "judge": { p: 8.2, side: "villager", icon: "🔨", desc: "Day ability: Click the 'Judge' button next to a player to execute them instantly and force Night phase. If you execute a villager, you are killed by the executioner." },
     "pokemon trainer": { p: 8.5, side: "neutral", icon: "🧢", desc: "Visit 1 player per night. If Progenitor, you die. Otherwise catch a Pokémon. At 5 catches, you become Champion." },
     "pokemon champion": { p: 8.6, side: "villager", icon: "🏆", desc: "Send 1 pokemon out each night to kill 1 player." },
+    "medium": { p: 8.8, side: "villager", icon: "👻", desc: "Can fully intercept frequencies from the beyond. Dead chat elements will manifest directly to your monitor links." },
     "detective": { p: 9, side: "villager", icon: "🔍", desc: "Investigate 1 target at night to reveal whether they are a Vampire." },
     "investigator": { p: 10, side: "villager", icon: "📋", desc: "Compare 2 targets at night to find out if they belong to the same faction alignment." },
     "psychic": { p: 11, side: "villager", icon: "🔮", desc: "Link 2 players at night. They will privately discover each other's roles via a system notification." },
@@ -419,7 +424,7 @@ function syncGameEngine() {
         // --- EXTENDED PLAYER NPC SEED STAGING ---
         if (isHost && Object.keys(users).length === 1 && currentPhase !== "game_over") {
             const npcUpdates = {};
-            const mockRoles = ["vampire progenitor", "jester", "doctor", "pokemon trainer", "judge", "spirit artist", "invisible vampire", "rando", "inflator"];
+            const mockRoles = ["vampire progenitor", "jester", "doctor", "medium", "judge", "spirit artist", "invisible vampire", "rando", "inflator"];
             for (let i = 1; i <= 9; i++) {
                 let suffix = i === 1 ? "alpha" : i === 2 ? "beta" : i === 3 ? "gamma" : i === 4 ? "delta" : `bot_${i}`;
                 npcUpdates[`users/npc_${suffix}`] = { 
@@ -717,12 +722,30 @@ function setupChatChannels() {
         if (resetInProgress) return;
         const m = snap.val();
         if(!m) return;
+
+        // VISIBILITY LOGIC HOOK
+        const isDeadMessage = (m.type === "priv");
+        const iAmAlive = (myProfile && myProfile.alive !== false);
+        const iAmMedium = (myProfile && myProfile.role === "medium");
+
+        if (isDeadMessage) {
+            // If message is from a dead player, alive players cannot see it unless they are a Medium
+            if (iAmAlive && !iAmMedium) {
+                return; 
+            }
+        }
+
         const div = document.createElement("div");
-        div.className = `msg ${m.type || ''}`;
         
         if (m.type === "sys") {
+            div.className = `msg ${m.type || ''}`;
             div.textContent = m.text;
+        } else if (isDeadMessage && iAmAlive && iAmMedium) {
+            // Render to living Mediums as specialized blue alerts
+            div.className = "msg medium-override";
+            div.textContent = `🔮 [Medium Echo] ${m.sender}: "${m.text}"`;
         } else {
+            div.className = `msg ${m.type || ''}`;
             const img = document.createElement("img");
             img.className = "msg-avatar";
             img.src = m.avatar ? `https://cdn.discordapp.com/avatars/${m.senderId}/${m.avatar}.png` : "https://cdn.discordapp.com/embed/avatars/0.png";
