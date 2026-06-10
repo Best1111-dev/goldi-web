@@ -4,7 +4,7 @@
     <title>Goldi Web - Lobby</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <style>
+<style>
         body {
             margin: 0;
             font-family: Arial, sans-serif;
@@ -69,6 +69,7 @@
             display: flex;
             flex-direction: column;
             height: 100%;
+            width: 100%;
             box-sizing: border-box;
         }
 
@@ -89,6 +90,7 @@
             display: flex;
             border-top: 1px solid #333;
             background: #1a1a1a;
+            padding: 2px;
         }
 
         input {
@@ -209,15 +211,24 @@
                 display: flex;
                 flex-direction: column;
                 flex-shrink: 0;
+                box-shrink: 0;
                 box-sizing: border-box;
             }
 
-            .panel { flex: 1; height: 50%; border: none; border-bottom: 1px solid #222; }
-            .middle-track .panel { height: 100%; }
+            /* FIX: Reset the layout structure of the middle track for flex design layout */
+            .middle-track .panel.middle { 
+                height: 100% !important; 
+                width: 100% !important;
+                display: flex;
+                flex-direction: column;
+            }
             
+            .panel { flex: 1; height: 50%; border: none; border-bottom: 1px solid #222; }
+            
+            /* FIX: Ensure chat is explicitly bounds-managed */
             .chat {
-                height: calc(100vh - 40px) !important;
-                max-height: calc(100vh - 40px) !important;
+                height: 100% !important;
+                max-height: 100% !important;
             }
         }
     </style>
