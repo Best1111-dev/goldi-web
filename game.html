@@ -1492,6 +1492,29 @@ function setupWiki() {
 
         if (query === "guide") {
             out.textContent = "GOLDI RULES SIMULATION SYSTEM:\nVillagers must deduce and eliminate all hidden threat factions.\nVampires look to execute target units silently during the night cycle.";
+        } else if (query === "role list" || query === "roles" || query === "rolelist") {
+            // Group existing roles dynamically from your system layout
+            const groups = { vampire: [], villager: [], neutral: [] };
+            
+            Object.entries(ROLE_DATA).forEach(([roleName, data]) => {
+                const side = (data.side || "neutral").toLowerCase();
+                const displayName = `${data.icon || ""} ${roleName.toUpperCase()}`;
+                
+                if (groups[side]) {
+                    groups[side].push(displayName);
+                } else {
+                    // Fallback block if an unrecognized alignment exists
+                    if (!groups["neutral"]) groups["neutral"] = [];
+                    groups["neutral"].push(displayName);
+                }
+            });
+
+            // Format lists cleanly for the out element text window wrapper
+            out.textContent = 
+                `VAMPIRE:\n${groups.vampire.length ? groups.vampire.join(", ") : "None"}\n\n` +
+                `VILLAGER:\n${groups.villager.length ? groups.villager.join(", ") : "None"}\n\n` +
+                `NEUTRAL:\n${groups.neutral.length ? groups.neutral.join(", ") : "None"}`;
+
         } else if (ROLE_DATA[query]) {
             out.textContent = `CARD: ${ROLE_DATA[query].icon} ${query.toUpperCase()}\nAlignment: ${ROLE_DATA[query].side.toUpperCase()}\nDescription: ${ROLE_DATA[query].desc}`;
         } else {
