@@ -184,36 +184,40 @@
             height: 40px;
             box-sizing: border-box;
         }
-        .hud-pill { color: #666; text-transform: uppercase; }
+        .hud-pill { color: #666; text-transform: uppercase; cursor: pointer; padding: 2px 8px; }
         .hud-pill.active { color: gold; }
 
         /* MOBILE LAYOUT STRATEGY OVERRIDES */
         @media (max-width: 768px) {
-            body { position: fixed; width: 100vw; height: 100vh; }
+            body { position: fixed; width: 100vw; height: 100vh; overflow: hidden; }
             .mobile-hud { display: flex; }
             
             .container {
                 display: flex;
                 width: 300vw;
-                height: calc(100dvh - 40px); 
+                height: calc(100vh - 40px); 
                 margin-top: 40px;
                 transform: translateX(-100vw);
+                transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+                will-change: transform;
             }
 
             .left-track, .middle-track, .right-track {
-                width: 100vw;
+                width: 100vw !important;
+                max-width: 100vw !important;
                 height: 100%;
                 display: flex;
                 flex-direction: column;
                 flex-shrink: 0;
+                box-sizing: border-box;
             }
 
             .panel { flex: 1; height: 50%; border: none; border-bottom: 1px solid #222; }
             .middle-track .panel { height: 100%; }
             
             .chat {
-                height: calc(100dvh - 40px) !important;
-                max-height: calc(100dvh - 40px) !important;
+                height: calc(100vh - 40px) !important;
+                max-height: calc(100vh - 40px) !important;
             }
         }
     </style>
@@ -583,14 +587,18 @@ function listenMessages() {
     });
 }
 
-/* FIX DEFINITIVE: BIND EVENTS TO CONTAINER THAT NEVER LEAVES SCROLLPORT */
+/* HORIZONTAL MOBILE SWIPE INTERACTION ENGINE */
 function setupMobileSwipeEngine() {
     const container = document.getElementById("swipeContainer");
-    const pills = [document.getElementById("pill-0"), document.getElementById("pill-1"), document.getElementById("pill-2")];
+    const pills = [
+        document.getElementById("pill-0"), 
+        document.getElementById("pill-1"), 
+        document.getElementById("pill-2")
+    ];
     
-    let currentTrackIndex = 1;
+    let currentTrackIndex = 1; // Default to Middle Column (Chat panel)
     let touchStartX = 0;
-    let touchEndX = 0;
+    let touchStartY = 0;
 
     function applyTrackShift() {
         if (window.innerWidth > 768) {
@@ -599,30 +607,61 @@ function setupMobileSwipeEngine() {
         }
         const shiftAmount = -currentTrackIndex * 100;
         container.style.transform = `translateX(${shiftAmount}vw)`;
-        pills.forEach((p, i) => {
-            if (i === currentTrackIndex) p.classList.add("active");
-            else p.classList.remove("active");
+        
+        // Sync active class on HUD indicators
+        pills.forEach((pill, idx) => {
+            if (pill) {
+                if (idx === currentTrackIndex) pill.classList.add("active");
+                else pill.classList.remove("active");
+            }
         });
     }
 
-    // Bind touch events to swipeContainer container element directly
+    // Bind fallback tap event handlers straight onto the top indicator text pills
+    pills.forEach((pill, idx) => {
+        if (pill) {
+            pill.onclick = () => {
+                currentTrackIndex = idx;
+                applyTrackShift();
+            };
+        }
+    });
+
     container.addEventListener("touchstart", e => {
-        // Exempt swipe events on target selectors (the scrollable chat messages log window area)
-        if (e.target.closest("#messages") || e.target.closest("#guestModal")) return;
-        touchStartX = e.changedTouches[0].screenX;
+        // Bypass completely when users are typing inside input fields or interactive modals
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.closest("#guestModal")) {
+            return;
+        }
+        touchStartX = e.changedTouches[0].clientX;
+        touchStartY = e.changedTouches[0].clientY;
     }, { passive: true });
 
     container.addEventListener("touchend", e => {
-        if (e.target.closest("#messages") || e.target.closest("#guestModal")) return;
-        touchEndX = e.changedTouches[0].screenX;
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.closest("#guestModal")) {
+            return;
+        }
         
-        const threshold = 60;
-        if (touchStartX - touchEndX > threshold) {
-            // Swipe Left -> Move Next Column panel
-            if (currentTrackIndex < 2) { currentTrackIndex++; applyTrackShift(); }
-        } else if (touchEndX - touchStartX > threshold) {
-            // Swipe Right -> Move Previous Column panel
-            if (currentTrackIndex > 0) { currentTrackIndex--; applyTrackShift(); }
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        
+        const deltaX = touchStartX - touchEndX;
+        const deltaY = touchStartY - touchEndY;
+        
+        // Verify gesture vector is prominently horizontal, not a vertical scroll action
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+            if (deltaX > 0) {
+                // Swiped Left -> Advance Track Right
+                if (currentTrackIndex < 2) {
+                    currentTrackIndex++;
+                    applyTrackShift();
+                }
+            } else {
+                // Swiped Right -> Return Track Left
+                if (currentTrackIndex > 0) {
+                    currentTrackIndex--;
+                    applyTrackShift();
+                }
+            }
         }
     }, { passive: true });
 
